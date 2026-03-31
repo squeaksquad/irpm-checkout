@@ -706,20 +706,23 @@ function renderSchedule() {
     dayBookings.forEach(bk => {
       const bkStart  = timeToMins(bk.startTime);
       const bkRawEnd = timeToMins(bk.endTime);
-      const isOvernight = bkRawEnd <= bkStart;
+      // endTime stored as e.g. "27:30" (1650 min) when it crosses midnight, not wrapped
+      const isOvernight = bkRawEnd >= 1440 || bkRawEnd <= bkStart;
 
       // Express segment in minutes relative to this column's midnight (0–1440)
       let segStart, segEnd, continuesFrom, continuesTo;
       if (bk.date === iso) {
         segStart = bkStart;
+        // end within this day's column: cap at 1440
         segEnd   = isOvernight ? 1440 : bkRawEnd;
         continuesFrom = false;
         continuesTo   = isOvernight;
       } else {
-        // started yesterday — only include if it's overnight and spills into today
+        // started yesterday — only include if overnight and spills into today
         if (!isOvernight) return;
         segStart = 0;
-        segEnd   = bkRawEnd;
+        // bkRawEnd may be > 1440 (e.g. 1650 = 27:30), wrap to 0–1440
+        segEnd   = bkRawEnd >= 1440 ? bkRawEnd - 1440 : bkRawEnd;
         continuesFrom = true;
         continuesTo   = false;
         if (segEnd <= 0) return;
