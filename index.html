@@ -111,6 +111,13 @@
   /* Booking blocks — overflow:visible so tooltip can escape; inner div clips text */
   .cal-block { position:absolute; left:3px; right:3px; border-radius:5px; padding:3px 6px; font-size:10px; line-height:1.35; cursor:pointer; overflow:visible; border-left-width:3px; border-left-style:solid; box-shadow:0 1px 3px rgba(0,0,0,0.08); transition:filter 0.12s, box-shadow 0.12s; z-index:2; }
   .cal-block:hover { filter:brightness(0.93); box-shadow:0 2px 8px rgba(0,0,0,0.15); z-index:200; }
+  /* Overnight continuation: square off the capped edge */
+  .cal-block.continues-to   { border-radius:5px 5px 0 0; border-bottom:2px dashed currentColor; }
+  .cal-block.continues-from { border-radius:0 0 5px 5px; border-top:2px dashed currentColor; }
+  .cal-block.continues-to.continues-from { border-radius:0; }
+  .cal-cont-badge { font-family:'IBM Plex Mono',monospace; font-size:8px; font-weight:600; opacity:0.75; line-height:1; pointer-events:none; }
+  .cal-cont-top { margin-bottom:2px; }
+  .cal-cont-bot { margin-top:2px; }
   .cal-block-inner { overflow:hidden; pointer-events:none; }
   .cal-block-title { font-weight:600; color:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:'IBM Plex Sans',sans-serif; }
   .cal-block-meta  { font-family:'IBM Plex Mono',monospace; font-size:8px; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
@@ -120,19 +127,19 @@
   .cal-preview { display:none; position:fixed; z-index:9998; background:var(--text); color:#fff; font-family:'IBM Plex Mono',monospace; font-size:9px; padding:6px 9px; border-radius:5px; white-space:nowrap; line-height:1.7; box-shadow:0 2px 8px rgba(0,0,0,0.25); pointer-events:none; }
 
   /* Anchored popover — appears on click, has interactive elements */
-  .cal-popover { display:none; position:fixed; z-index:9999; background:var(--surface); border:1px solid var(--border2); color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:10px; padding:0; border-radius:9px; min-width:220px; line-height:1.6; box-shadow:var(--shadow-lg); pointer-events:auto; }
+  .cal-popover { display:none; position:fixed; z-index:9999; background:var(--surface); border:1px solid var(--border2); color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:0; border-radius:9px; min-width:240px; line-height:1.6; box-shadow:var(--shadow-lg); pointer-events:auto; }
   .cal-popover.open { display:block; }
-  .cal-pop-hd { padding:10px 12px 8px; border-bottom:1px solid var(--border); }
-  .cal-pop-name { font-family:'IBM Plex Sans',sans-serif; font-size:13px; font-weight:600; color:var(--text); margin-bottom:1px; }
-  .cal-pop-time { font-size:9px; color:var(--text3); }
-  .cal-pop-body { padding:8px 12px; display:flex; flex-direction:column; gap:5px; }
-  .cal-pop-row { display:flex; align-items:center; gap:6px; }
-  .cal-pop-label { font-size:8px; color:var(--text4); text-transform:uppercase; letter-spacing:0.5px; min-width:36px; }
-  .cal-pop-val { flex:1; color:var(--text2); font-size:9px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .cal-pop-copy { flex-shrink:0; background:var(--surface2); border:1px solid var(--border); color:var(--text3); font-family:'IBM Plex Mono',monospace; font-size:8px; padding:1px 6px; border-radius:3px; cursor:pointer; transition:all 0.12s; }
+  .cal-pop-hd { padding:11px 14px 9px; border-bottom:1px solid var(--border); }
+  .cal-pop-name { font-family:'IBM Plex Sans',sans-serif; font-size:15px; font-weight:700; color:var(--text); margin-bottom:2px; }
+  .cal-pop-time { font-size:11px; color:var(--text3); font-weight:500; }
+  .cal-pop-body { padding:10px 14px; display:flex; flex-direction:column; gap:7px; }
+  .cal-pop-row { display:flex; align-items:center; gap:8px; }
+  .cal-pop-label { font-size:9px; color:var(--text4); text-transform:uppercase; letter-spacing:0.5px; min-width:40px; }
+  .cal-pop-val { flex:1; color:var(--text); font-size:11px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cal-pop-copy { flex-shrink:0; background:var(--surface2); border:1px solid var(--border); color:var(--text3); font-family:'IBM Plex Mono',monospace; font-size:9px; padding:2px 7px; border-radius:3px; cursor:pointer; transition:all 0.12s; }
   .cal-pop-copy:hover { background:var(--blue-lt); border-color:var(--blue); color:var(--blue); }
   .cal-pop-copy.copied { background:var(--green-lt); border-color:var(--green); color:var(--green); }
-  .cal-pop-footer { padding:8px 12px; border-top:1px solid var(--border); }
+  .cal-pop-footer { padding:9px 14px; border-top:1px solid var(--border); }
 
   /* Now line */
   .cal-now-line { position:absolute; left:0; right:0; height:2px; background:var(--red); z-index:15; pointer-events:none; }
@@ -689,38 +696,51 @@ function renderSchedule() {
       }
     }
 
-    // Bookings for this day
-    // Gather all items from all bundles (deduped by itemId)
-    const allItemIds = [...new Set(BUNDLES.flatMap(b => [...b.items, ...(b.optional||[])]))];
-    const dayBookings = bookings.filter(bk => bk.date === iso);
+    // Bookings for this column: started today, OR started yesterday and are overnight
+    const prevIso = toISODate(addDays(d, -1));
+    const dayBookings = bookings.filter(bk => bk.date === iso || bk.date === prevIso);
 
     // Group blocks to handle horizontal overlap within a day column
-    // Simple approach: track occupied minute-ranges and offset overlapping blocks
-    const placed = []; // [{startMin, endMin, col, totalCols}]
+    const placed = [];
 
     dayBookings.forEach(bk => {
-      const startMin = timeToMins(bk.startTime);
-      const rawEnd   = timeToMins(bk.endTime);
-      const endMin   = rawEnd <= startMin ? rawEnd + 1440 : rawEnd; // overnight
+      const bkStart  = timeToMins(bk.startTime);
+      const bkRawEnd = timeToMins(bk.endTime);
+      const isOvernight = bkRawEnd <= bkStart;
 
-      // Clamp to visible window
+      // Express segment in minutes relative to this column's midnight (0–1440)
+      let segStart, segEnd, continuesFrom, continuesTo;
+      if (bk.date === iso) {
+        segStart = bkStart;
+        segEnd   = isOvernight ? 1440 : bkRawEnd;
+        continuesFrom = false;
+        continuesTo   = isOvernight;
+      } else {
+        // started yesterday — only include if it's overnight and spills into today
+        if (!isOvernight) return;
+        segStart = 0;
+        segEnd   = bkRawEnd;
+        continuesFrom = true;
+        continuesTo   = false;
+        if (segEnd <= 0) return;
+      }
+
       const visStart = CAL_START_H * 60, visEnd = CAL_END_H * 60;
-      if (endMin <= visStart || startMin >= visEnd) return;
-      const clampStart = Math.max(startMin, visStart);
-      const clampEnd   = Math.min(endMin,   visEnd);
+      if (segEnd <= visStart || segStart >= visEnd) return;
+      const clampStart = Math.max(segStart, visStart);
+      const clampEnd   = Math.min(segEnd,   visEnd);
 
-      // Find overlapping placed blocks to determine horizontal slot
       const overlapping = placed.filter(p => !(clampEnd <= p.startMin || clampStart >= p.endMin));
       let slot = 0;
       const usedSlots = overlapping.map(p => p.slot);
       while (usedSlots.includes(slot)) slot++;
       const totalSlots = Math.max(slot + 1, ...overlapping.map(p => p.totalSlots || 1));
-      overlapping.forEach(p => { p.totalSlots = totalSlots; }); // widen existing
-      placed.push({ startMin: clampStart, endMin: clampEnd, slot, totalSlots, bk });
+      overlapping.forEach(p => { p.totalSlots = totalSlots; });
+      placed.push({ startMin: clampStart, endMin: clampEnd, slot, totalSlots, bk, continuesFrom, continuesTo });
     });
 
     // Now render with final totalSlots
-    placed.forEach(({ startMin, endMin, slot, totalSlots, bk }) => {
+    placed.forEach(({ startMin, endMin, slot, totalSlots, bk, continuesFrom, continuesTo }) => {
       const visStart = CAL_START_H * 60;
       const topPct  = ((startMin - visStart) / (CAL_TOTAL_H * 60)) * 100;
       const heightPx = Math.max(18, ((endMin - startMin) / (CAL_TOTAL_H * 60)) * totalPx);
@@ -732,16 +752,21 @@ function renderSchedule() {
       const leftPct = slot * slotW;
 
       const blk = document.createElement('div');
-      blk.className = 'cal-block';
+      blk.className = 'cal-block' + (continuesFrom ? ' continues-from' : '') + (continuesTo ? ' continues-to' : '');
       blk.style.cssText = `top:${topPct.toFixed(3)}%; height:${heightPx.toFixed(1)}px; left:calc(${leftPct.toFixed(2)}% + 3px); right:calc(${(100 - leftPct - slotW).toFixed(2)}% + 3px); background:${clr.bg}; border-left-color:${clr.bd}; color:${clr.tx};`;
 
       const itemNames = (bk.itemLabels || bk.itemIds.map(id => ITEMS[id]?.label || id)).join(', ');
       const shortTime = `${formatTimeStr(bk.startTime)}–${formatTimeStr(bk.endTime)}`;
       const tall = heightPx >= 40;
 
-      blk.innerHTML = `<div class="cal-block-inner"><div class="cal-block-title">${escHtml(bk.name.split(' ')[0])}</div>` +
+      // continuesTo: show ↓ arrow at bottom; continuesFrom: show ↑ at top
+      const fromBadge = continuesFrom ? `<div class="cal-cont-badge cal-cont-top">↑ cont.</div>` : '';
+      const toBadge   = continuesTo   ? `<div class="cal-cont-badge cal-cont-bot">↓ cont.</div>` : '';
+
+      blk.innerHTML = fromBadge +
+        `<div class="cal-block-inner"><div class="cal-block-title">${escHtml(bk.name.split(' ')[0])}</div>` +
         (tall ? `<div class="cal-block-meta">${shortTime}</div><div class="cal-block-equip">${escHtml(itemNames)}</div>` : '') +
-        `</div>`;
+        `</div>` + toBadge;
 
       // Hover preview (cursor-tracking, no interaction)
       const preview = document.createElement('div');
