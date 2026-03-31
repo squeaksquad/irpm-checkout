@@ -81,19 +81,20 @@
   .icon-btn.text { width:auto; padding:0 10px; font-size:11px; font-family:'IBM Plex Mono',monospace; letter-spacing:0.3px; }
 
   /* ── CALENDAR WEEK VIEW ── */
-  .schedule-wrap { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; box-shadow:var(--shadow); }
+  /* schedule-wrap: no overflow:hidden — that was killing scroll and clipping tooltips */
+  .schedule-wrap { background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); }
 
-  /* Sticky day-header row */
-  .cal-header { display:grid; background:var(--surface2); border-bottom:2px solid var(--border); position:sticky; top:0; z-index:30; }
-  .cal-hd-gutter { border-right:1px solid var(--border); background:var(--surface2); }
+  /* Sticky day-header — offset by header height (58px) so it sticks below the app header */
+  .cal-header { display:grid; background:var(--surface2); border-bottom:2px solid var(--border); border-radius:12px 12px 0 0; position:sticky; top:58px; z-index:30; }
+  .cal-hd-gutter { border-right:1px solid var(--border); background:var(--surface2); border-radius:12px 0 0 0; }
   .cal-hd-cell { padding:8px 6px 7px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:500; color:var(--text3); border-right:1px solid var(--border); text-transform:uppercase; letter-spacing:0.4px; line-height:1.4; }
-  .cal-hd-cell:last-child { border-right:none; }
+  .cal-hd-cell:last-child { border-right:none; border-radius:0 12px 0 0; }
   .cal-hd-cell.today { color:var(--blue); }
   .cal-hd-cell.today .cal-hd-day { background:var(--blue); color:#fff; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; font-size:13px; font-weight:700; font-family:'IBM Plex Sans',sans-serif; }
   .cal-hd-day { display:inline-block; font-size:16px; font-weight:600; font-family:'IBM Plex Sans',sans-serif; color:var(--text); margin-top:2px; }
 
-  /* Scrollable body */
-  .cal-body-scroll { overflow-y:auto; max-height:640px; }
+  /* Scrollable body — clips vertically but NOT tooltips (handled via fixed positioning) */
+  .cal-body-scroll { overflow-y:auto; max-height:680px; border-radius:0 0 12px 12px; border-top:1px solid var(--border); }
   .cal-body { display:grid; position:relative; }
 
   /* Time gutter */
@@ -107,16 +108,16 @@
   .cal-hour-line { position:absolute; left:0; right:0; border-top:1px solid var(--border); pointer-events:none; }
   .cal-hour-line.half { border-top-style:dashed; border-top-color:var(--border); opacity:0.5; }
 
-  /* Booking blocks */
-  .cal-block { position:absolute; left:3px; right:3px; border-radius:5px; padding:3px 6px; font-size:10px; line-height:1.35; cursor:pointer; overflow:hidden; border-left-width:3px; border-left-style:solid; box-shadow:0 1px 3px rgba(0,0,0,0.08); transition:filter 0.12s, box-shadow 0.12s; z-index:2; }
-  .cal-block:hover { filter:brightness(0.93); box-shadow:0 2px 8px rgba(0,0,0,0.15); z-index:10; }
+  /* Booking blocks — overflow:visible so tooltip can escape; inner div clips text */
+  .cal-block { position:absolute; left:3px; right:3px; border-radius:5px; padding:3px 6px; font-size:10px; line-height:1.35; cursor:pointer; overflow:visible; border-left-width:3px; border-left-style:solid; box-shadow:0 1px 3px rgba(0,0,0,0.08); transition:filter 0.12s, box-shadow 0.12s; z-index:2; }
+  .cal-block:hover { filter:brightness(0.93); box-shadow:0 2px 8px rgba(0,0,0,0.15); z-index:200; }
+  .cal-block-inner { overflow:hidden; pointer-events:none; }
   .cal-block-title { font-weight:600; color:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:'IBM Plex Sans',sans-serif; }
   .cal-block-meta  { font-family:'IBM Plex Mono',monospace; font-size:8px; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
   .cal-block-equip { font-family:'IBM Plex Mono',monospace; font-size:8px; opacity:0.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-  /* Staff tooltip on hover */
-  .cal-block .bk-staff-info { display:none; position:absolute; left:calc(100% + 6px); top:0; z-index:100; background:var(--text); color:#fff; font-family:'IBM Plex Mono',monospace; font-size:9px; padding:8px 10px; border-radius:6px; white-space:nowrap; min-width:180px; line-height:1.7; box-shadow:0 4px 16px rgba(0,0,0,0.25); pointer-events:auto; }
-  .cal-block:hover .bk-staff-info { display:block; }
+  /* Tooltip — position:fixed so it escapes overflow:hidden on scroll containers */
+  .cal-tooltip { display:none; position:fixed; z-index:9999; background:var(--text); color:#fff; font-family:'IBM Plex Mono',monospace; font-size:9px; padding:8px 10px; border-radius:6px; white-space:nowrap; min-width:190px; line-height:1.8; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:auto; }
 
   /* Now line */
   .cal-now-line { position:absolute; left:0; right:0; height:2px; background:var(--red); z-index:15; pointer-events:none; }
@@ -581,10 +582,10 @@ function getStartOfWeek(d) { const c = new Date(d), day = c.getDay(), diff = c.g
 function addDays(d, n) { const c = new Date(d); c.setDate(c.getDate() + n); return c; }
 
 // ── CALENDAR WEEK VIEW ─────────────────────────────────────────────────────
-const CAL_START_H = 8;   // first visible hour
-const CAL_END_H   = 22;  // last visible hour (exclusive top of row)
-const CAL_TOTAL_H = CAL_END_H - CAL_START_H; // 14h window
-const CAL_PX_PER_H = 48; // height of one hour row in px
+const CAL_START_H = 0;   // midnight
+const CAL_END_H   = 24;  // midnight next day
+const CAL_TOTAL_H = CAL_END_H - CAL_START_H; // 24h
+const CAL_PX_PER_H = 48; // user-adjustable height per hour
 
 // Palette: bg / border / text for each equipment slot (cycles)
 const CAL_COLORS = [
@@ -602,6 +603,9 @@ function calColorForItem(itemId) {
 }
 
 function renderSchedule() {
+  // Remove any leftover fixed tooltips from previous render
+  document.querySelectorAll('.cal-tooltip').forEach(el => el.remove());
+
   const base = new Date();
   const mon  = addDays(getStartOfWeek(base), weekOffset * 7);
   document.getElementById('week-label').textContent =
@@ -706,7 +710,6 @@ function renderSchedule() {
       const topPct  = ((startMin - visStart) / (CAL_TOTAL_H * 60)) * 100;
       const heightPx = Math.max(18, ((endMin - startMin) / (CAL_TOTAL_H * 60)) * totalPx);
 
-      // Pick a color per item (use first itemId in booking that matches our palette)
       const repItem = bk.itemIds.find(id => ITEMS[id]) || bk.itemIds[0];
       const clr = calColorForItem(repItem);
 
@@ -721,18 +724,32 @@ function renderSchedule() {
       const shortTime = `${formatTimeStr(bk.startTime)}–${formatTimeStr(bk.endTime)}`;
       const tall = heightPx >= 40;
 
-      blk.innerHTML = `<div class="cal-block-title">${escHtml(bk.name.split(' ')[0])}</div>` +
-        (tall ? `<div class="cal-block-meta">${shortTime}</div><div class="cal-block-equip">${escHtml(itemNames)}</div>` : '');
+      blk.innerHTML = `<div class="cal-block-inner"><div class="cal-block-title">${escHtml(bk.name.split(' ')[0])}</div>` +
+        (tall ? `<div class="cal-block-meta">${shortTime}</div><div class="cal-block-equip">${escHtml(itemNames)}</div>` : '') +
+        `</div>`;
 
-      if (window._isStaff) {
-        blk.innerHTML += `<div class="bk-staff-info">${escHtml(bk.name)} (${escHtml(bk.email)})<br>` +
-          `Phone: ${escHtml(formatPhone(bk.phone)||'--')}<br>` +
-          `ID: ${escHtml(bk.sid||'--')}<br>` +
-          `Items: ${escHtml(itemNames)}<br>` +
-          `${shortTime}<br>` +
-          `Booked: ${new Date(bk.createdAt).toLocaleDateString()}<br><br>` +
-          `<button class="btn-danger" style="width:100%" onclick="event.stopPropagation();window.deleteBookingFromServer('${bk.id}')">Cancel Booking</button></div>`;
-      }
+      // Tooltip via position:fixed (escapes all scroll+overflow contexts)
+      const tip = document.createElement('div');
+      tip.className = 'cal-tooltip';
+      tip.innerHTML = `<b>${escHtml(bk.name)}</b><br>` +
+        `${shortTime}<br>` +
+        `Items: ${escHtml(itemNames)}<br>` +
+        (window._isStaff
+          ? `Email: ${escHtml(bk.email)}<br>Phone: ${escHtml(formatPhone(bk.phone)||'--')}<br>ID: ${escHtml(bk.sid||'--')}<br>Booked: ${new Date(bk.createdAt).toLocaleDateString()}<br><br>` +
+            `<button class="btn-danger" style="width:100%" onclick="event.stopPropagation();window.deleteBookingFromServer('${bk.id}')">Cancel Booking</button>`
+          : '');
+      document.body.appendChild(tip);
+
+      blk.addEventListener('mouseenter', e => {
+        tip.style.display = 'block';
+        calPositionTip(tip, e);
+      });
+      blk.addEventListener('mousemove', e => calPositionTip(tip, e));
+      blk.addEventListener('mouseleave', e => {
+        // hide only if not moving into the tip itself
+        if (!tip.contains(e.relatedTarget)) tip.style.display = 'none';
+      });
+      tip.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
 
       col.appendChild(blk);
     });
@@ -741,13 +758,11 @@ function renderSchedule() {
     if (iso === todayISO) {
       const now = new Date();
       const nowMin = now.getHours() * 60 + now.getMinutes();
-      if (nowMin >= CAL_START_H * 60 && nowMin <= CAL_END_H * 60) {
-        const nowLine = document.createElement('div');
-        nowLine.className = 'cal-now-line';
-        nowLine.style.top = ((nowMin - CAL_START_H*60) / (CAL_TOTAL_H*60) * 100) + '%';
-        nowLine.innerHTML = '<div class="cal-now-dot"></div>';
-        col.appendChild(nowLine);
-      }
+      const nowLine = document.createElement('div');
+      nowLine.className = 'cal-now-line';
+      nowLine.style.top = ((nowMin - CAL_START_H*60) / (CAL_TOTAL_H*60) * 100) + '%';
+      nowLine.innerHTML = '<div class="cal-now-dot"></div>';
+      col.appendChild(nowLine);
     }
 
     grid.appendChild(col);
@@ -755,13 +770,25 @@ function renderSchedule() {
 
   bdy.appendChild(grid);
 
-  // Scroll to show current time (or 8am start) on load
-  if (weekOffset === 0) {
+  // Scroll to 1hr before current time on load (today), else scroll to 8am
+  requestAnimationFrame(() => {
     const now = new Date();
     const nowMin = now.getHours() * 60 + now.getMinutes();
-    const scrollTarget = Math.max(0, ((nowMin - CAL_START_H*60 - 60) / (CAL_TOTAL_H*60)) * totalPx);
-    requestAnimationFrame(() => { bdy.scrollTop = scrollTarget; });
-  }
+    const target = weekOffset === 0
+      ? Math.max(0, ((nowMin - 60) / (CAL_TOTAL_H * 60)) * totalPx)
+      : (8 / CAL_TOTAL_H) * totalPx; // 8am for other weeks
+    bdy.scrollTop = target;
+  });
+}
+
+function calPositionTip(tip, e) {
+  const pad = 12, vw = window.innerWidth, vh = window.innerHeight;
+  const tw = tip.offsetWidth || 200, th = tip.offsetHeight || 120;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  if (x + tw > vw - pad) x = e.clientX - tw - pad;
+  if (y + th > vh - pad) y = e.clientY - th - pad;
+  tip.style.left = x + 'px';
+  tip.style.top  = y + 'px';
 }
 function formatTimeStr(t24) {
   let [h, m] = t24.split(':'); h = parseInt(h, 10);
