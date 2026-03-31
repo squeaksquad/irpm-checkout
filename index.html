@@ -572,8 +572,8 @@ let bookings = [], weekOffset = 0, selBundleId = null, selOptItems = [];
 
 // ── TIMELINE STATE ─────────────────────────────────────────────────────────
 let tlDate = new Date(); tlDate.setHours(0, 0, 0);
-const TL_STEPS = 192, TL_MINS = 48 * 60;
-let tlStartStep = 36, tlEndStep = 44;
+const TL_STEPS = 96, TL_MINS = 24 * 60;
+let tlStartStep = 36, tlEndStep = 44; // default 9am–11am
 
 function stepToMin(s) { return s * 15; }
 function toISODate(d) { const tz = d.getTimezoneOffset() * 60000; return new Date(d - tz).toISOString().split('T')[0]; }
@@ -967,18 +967,17 @@ function minToTime12(m) {
 function fmtShort(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 
 function tlRender() {
-  const ds = tlDateStr(), nd = tlNextDateStr();
-  const nextDate = new Date(tlDate); nextDate.setDate(tlDate.getDate() + 1);
+  const ds = tlDateStr();
   document.getElementById('tl-date-label').textContent = tlDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  const tickHours = [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48];
+  const tickHours = [0, 3, 6, 9, 12, 15, 18, 21, 24];
   document.getElementById('tl-ticks').innerHTML = tickHours.map((h, i) => {
     const isLast = i === tickHours.length - 1; if (isLast) return `<div class="tl-tick" style="flex:0.001"></div>`;
-    const hh = h % 24; const lbl = hh === 0 ? (h === 0 ? '12a' : '<span style="color:var(--blue-dk);font-size:8px">↑nxt</span>') : hh < 12 ? `${hh}a` : hh === 12 ? '12p' : `${hh - 12}p`;
+    const lbl = h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`;
     return `<div class="tl-tick">${lbl}</div>`;
   }).join('');
 
-  document.getElementById('tl-sublabel').innerHTML = `<span>${fmtShort(tlDate)}</span><span style="color:var(--border2)">·····</span><span>midnight</span><span style="color:var(--border2)">·····</span><span>${fmtShort(nextDate)}</span>`;
+  document.getElementById('tl-sublabel').innerHTML = `<span>${fmtShort(tlDate)} midnight</span><span style="color:var(--border2)">···············</span><span>11:59 PM</span>`;
 
   if (!selBundleId) {
     document.getElementById('tl-tracks').innerHTML = '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center;border:1px dashed var(--border);border-radius:6px;">Select a bundle above to view availability.</div>';
@@ -990,12 +989,12 @@ function tlRender() {
   const tracksEl = document.getElementById('tl-tracks'); tracksEl.innerHTML = '';
   const selStartMin = stepToMin(tlStartStep), selEndMin = stepToMin(tlEndStep);
 
-  function getBookingsFor48h(itemId) { return bookings.filter(bk => bk.itemIds.includes(itemId) && (bk.date === ds || bk.date === nd)); }
+  function getBookingsForDay(itemId) { return bookings.filter(bk => bk.itemIds.includes(itemId) && bk.date === ds); }
   function bookingToAbsRange(bk) {
-    const sMin = timeToMins(bk.startTime), eMin = timeToMins(bk.endTime), isOvernight = eMin <= sMin;
-    if (bk.date === ds) return [sMin, isOvernight ? 1440 + eMin : eMin];
-    if (bk.date === nd) { const a = 1440 + sMin; return [a, isOvernight ? 2880 + eMin : 1440 + eMin]; }
-    return null;
+    const sMin = timeToMins(bk.startTime), eMin = timeToMins(bk.endTime);
+    const isOvernight = eMin >= 1440 || eMin <= sMin;
+    // overnight: show from start to end of day (1440); the next-day portion isn't shown on this 24h track
+    return [sMin, isOvernight ? 1440 : eMin];
   }
 
   let anyConflict = false;
@@ -1004,7 +1003,7 @@ function tlRender() {
     const lbl = document.createElement('div'); lbl.className = 'tl-label'; lbl.textContent = ITEMS[iid].label;
     const track = document.createElement('div'); track.className = 'tl-track';
     let hasConflict = false;
-    getBookingsFor48h(iid).forEach(bk => {
+    getBookingsForDay(iid).forEach(bk => {
       const range = bookingToAbsRange(bk); if (!range) return;
       const [absStart, absEnd] = range;
       const seg = document.createElement('div'); seg.className = 'tl-booked';
@@ -1024,8 +1023,8 @@ function tlRender() {
   document.getElementById('tl-duration').textContent = `${Math.floor(diffMin / 60)}h${diffMin % 60 > 0 ? ` ${diffMin % 60}m` : ''}`;
 
   const crossesMidnight = selEndMin >= 1440;
-  const startLbl = crossesMidnight ? `${fmtShort(tlDate)} ${minToTime12(selStartMin)}` : minToTime12(selStartMin);
-  const endLbl = crossesMidnight ? `${fmtShort(nextDate)} ${minToTime12(selEndMin)}` : minToTime12(selEndMin);
+  const startLbl = minToTime12(selStartMin);
+  const endLbl = crossesMidnight ? `${fmtShort(new Date(tlDate.getTime() + 86400000))} ${minToTime12(selEndMin)}` : minToTime12(selEndMin);
   document.getElementById('tl-time-display').textContent = `${startLbl} – ${endLbl}`;
 
   const noteEl = document.getElementById('tl-conflict-note');
@@ -1041,7 +1040,7 @@ function tlRender() {
 
 // ── DRAG SLIDER ────────────────────────────────────────────────────────────
 function tlInitSliders() {
-  const MIN_GAP = 2, MAX_GAP = 95;
+  const MIN_GAP = 2, MAX_GAP = 96;
   const track = document.getElementById('range-track');
   const fillEl = document.getElementById('range-fill');
   const centerEl = document.getElementById('range-center');
