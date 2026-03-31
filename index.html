@@ -80,28 +80,47 @@
   .icon-btn:hover { border-color:var(--blue); color:var(--blue); background:var(--blue-lt); }
   .icon-btn.text { width:auto; padding:0 10px; font-size:11px; font-family:'IBM Plex Mono',monospace; letter-spacing:0.3px; }
 
-  /* ── SCHEDULE TABLE ── */
+  /* ── CALENDAR WEEK VIEW ── */
   .schedule-wrap { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; box-shadow:var(--shadow); }
-  .schedule-header { display:grid; grid-template-columns:156px repeat(7,1fr); background:var(--surface2); border-bottom:1px solid var(--border); }
-  .sched-hd-cell { padding:10px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:500; color:var(--text3); border-right:1px solid var(--border); text-transform:uppercase; letter-spacing:0.4px; }
-  .sched-hd-cell:last-child { border-right:none; }
-  .sched-hd-cell.today { color:var(--blue); background:var(--blue-lt); }
-  .item-row { display:grid; grid-template-columns:156px repeat(7,1fr); border-bottom:1px solid var(--border); min-height:60px; }
-  .item-row:last-child { border-bottom:none; }
-  .pair-divider { grid-column:1/-1; padding:5px 14px; background:var(--surface2); border-bottom:1px solid var(--border); font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:500; color:var(--text4); letter-spacing:1.2px; text-transform:uppercase; display:flex; align-items:center; gap:10px; }
-  .pair-divider::after { content:''; flex:1; height:1px; background:var(--border); }
-  .item-label { padding:12px 14px; border-right:1px solid var(--border); display:flex; flex-direction:column; justify-content:center; gap:2px; }
-  .item-name { font-size:13px; font-weight:600; color:var(--text); }
-  .item-type { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text4); text-transform:uppercase; letter-spacing:0.8px; }
-  .day-cell  { border-right:1px solid var(--border); padding:5px 4px; display:flex; flex-direction:column; gap:3px; min-height:60px; }
-  .day-cell:last-child { border-right:none; }
-  .day-cell.today { background:#eff6ff; }
-  .booking-block { background:var(--blue-lt); border:1px solid #bfdbfe; border-radius:4px; padding:3px 6px; font-family:'IBM Plex Mono',monospace; font-size:9px; line-height:1.4; cursor:pointer; transition:background 0.12s; position:relative; }
-  .booking-block:hover { background:#bfdbfe; }
-  .bk-name { font-weight:500; color:var(--text2); }
-  .bk-time { color:var(--text3); font-size:8px; }
-  .booking-block .bk-staff-info { display:none; position:absolute; left:0; top:100%; z-index:20; background:var(--text); color:#fff; font-family:'IBM Plex Mono',monospace; font-size:9px; padding:6px 8px; border-radius:5px; white-space:nowrap; min-width:160px; line-height:1.6; box-shadow:0 4px 12px rgba(0,0,0,0.2); }
-  .booking-block:hover .bk-staff-info { display:block; }
+
+  /* Sticky day-header row */
+  .cal-header { display:grid; background:var(--surface2); border-bottom:2px solid var(--border); position:sticky; top:0; z-index:30; }
+  .cal-hd-gutter { border-right:1px solid var(--border); background:var(--surface2); }
+  .cal-hd-cell { padding:8px 6px 7px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:500; color:var(--text3); border-right:1px solid var(--border); text-transform:uppercase; letter-spacing:0.4px; line-height:1.4; }
+  .cal-hd-cell:last-child { border-right:none; }
+  .cal-hd-cell.today { color:var(--blue); }
+  .cal-hd-cell.today .cal-hd-day { background:var(--blue); color:#fff; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; font-size:13px; font-weight:700; font-family:'IBM Plex Sans',sans-serif; }
+  .cal-hd-day { display:inline-block; font-size:16px; font-weight:600; font-family:'IBM Plex Sans',sans-serif; color:var(--text); margin-top:2px; }
+
+  /* Scrollable body */
+  .cal-body-scroll { overflow-y:auto; max-height:640px; }
+  .cal-body { display:grid; position:relative; }
+
+  /* Time gutter */
+  .cal-gutter { border-right:1px solid var(--border); background:var(--surface2); position:relative; }
+  .cal-hour-label { position:absolute; right:8px; font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text4); transform:translateY(-50%); white-space:nowrap; letter-spacing:0.2px; }
+
+  /* Day columns */
+  .cal-day-col { border-right:1px solid var(--border); position:relative; background:var(--surface); }
+  .cal-day-col:last-child { border-right:none; }
+  .cal-day-col.today { background:#f5f9ff; }
+  .cal-hour-line { position:absolute; left:0; right:0; border-top:1px solid var(--border); pointer-events:none; }
+  .cal-hour-line.half { border-top-style:dashed; border-top-color:var(--border); opacity:0.5; }
+
+  /* Booking blocks */
+  .cal-block { position:absolute; left:3px; right:3px; border-radius:5px; padding:3px 6px; font-size:10px; line-height:1.35; cursor:pointer; overflow:hidden; border-left-width:3px; border-left-style:solid; box-shadow:0 1px 3px rgba(0,0,0,0.08); transition:filter 0.12s, box-shadow 0.12s; z-index:2; }
+  .cal-block:hover { filter:brightness(0.93); box-shadow:0 2px 8px rgba(0,0,0,0.15); z-index:10; }
+  .cal-block-title { font-weight:600; color:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:'IBM Plex Sans',sans-serif; }
+  .cal-block-meta  { font-family:'IBM Plex Mono',monospace; font-size:8px; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
+  .cal-block-equip { font-family:'IBM Plex Mono',monospace; font-size:8px; opacity:0.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Staff tooltip on hover */
+  .cal-block .bk-staff-info { display:none; position:absolute; left:calc(100% + 6px); top:0; z-index:100; background:var(--text); color:#fff; font-family:'IBM Plex Mono',monospace; font-size:9px; padding:8px 10px; border-radius:6px; white-space:nowrap; min-width:180px; line-height:1.7; box-shadow:0 4px 16px rgba(0,0,0,0.25); pointer-events:auto; }
+  .cal-block:hover .bk-staff-info { display:block; }
+
+  /* Now line */
+  .cal-now-line { position:absolute; left:0; right:0; height:2px; background:var(--red); z-index:15; pointer-events:none; }
+  .cal-now-dot  { position:absolute; left:-4px; top:-4px; width:9px; height:9px; border-radius:50%; background:var(--red); }
 
   /* ── CHECKOUT ── */
   .checkout-cols { display:grid; grid-template-columns:1fr 300px; gap:20px; align-items:start; }
@@ -255,8 +274,8 @@
         <button class="icon-btn" onclick="weekOffset++;renderSchedule();">›</button>
       </div>
       <div class="schedule-wrap">
-        <div class="schedule-header" id="sched-hd"></div>
-        <div id="sched-body"></div>
+        <div id="sched-hd"></div>
+        <div class="cal-body-scroll" id="sched-body"></div>
       </div>
     </div>
 
@@ -561,42 +580,188 @@ function refreshAllViews() { renderSchedule(); renderBundlePicker(); tlRender();
 function getStartOfWeek(d) { const c = new Date(d), day = c.getDay(), diff = c.getDate() - day + (day === 0 ? -6 : 1); c.setDate(diff); c.setHours(0, 0, 0, 0); return c; }
 function addDays(d, n) { const c = new Date(d); c.setDate(c.getDate() + n); return c; }
 
+// ── CALENDAR WEEK VIEW ─────────────────────────────────────────────────────
+const CAL_START_H = 8;   // first visible hour
+const CAL_END_H   = 22;  // last visible hour (exclusive top of row)
+const CAL_TOTAL_H = CAL_END_H - CAL_START_H; // 14h window
+const CAL_PX_PER_H = 64; // height of one hour row in px
+
+// Palette: bg / border / text for each equipment slot (cycles)
+const CAL_COLORS = [
+  { bg:'#dbeafe', bd:'#3b82f6', tx:'#1e40af' }, // blue
+  { bg:'#dcfce7', bd:'#22c55e', tx:'#166534' }, // green
+  { bg:'#fef9c3', bd:'#eab308', tx:'#713f12' }, // yellow
+  { bg:'#f3e8ff', bd:'#a855f7', tx:'#581c87' }, // purple
+  { bg:'#ffedd5', bd:'#f97316', tx:'#7c2d12' }, // orange
+  { bg:'#fce7f3', bd:'#ec4899', tx:'#831843' }, // pink
+];
+
+function calColorForItem(itemId) {
+  const allItems = Object.keys(ITEMS);
+  return CAL_COLORS[allItems.indexOf(itemId) % CAL_COLORS.length];
+}
+
 function renderSchedule() {
-  const base = new Date(), mon = addDays(getStartOfWeek(base), weekOffset * 7);
-  document.getElementById('week-label').textContent = `${mon.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${addDays(mon, 6).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-  const hd = document.getElementById('sched-hd'); hd.innerHTML = '';
-  hd.appendChild(Object.assign(document.createElement('div'), { className: 'sched-hd-cell', textContent: 'Equipment' }));
-  const days = []; const todayISO = toISODate(base);
-  for (let i = 0; i < 7; i++) {
-    const d = addDays(mon, i); days.push(toISODate(d));
-    const cell = document.createElement('div');
-    cell.className = 'sched-hd-cell' + (toISODate(d) === todayISO ? ' today' : '');
-    cell.innerHTML = `${d.toLocaleDateString('en-US', { weekday: 'short' })}<br><span style="font-size:12px;color:var(--text);">${d.getDate()}</span>`;
-    hd.appendChild(cell);
+  const base = new Date();
+  const mon  = addDays(getStartOfWeek(base), weekOffset * 7);
+  document.getElementById('week-label').textContent =
+    `${mon.toLocaleDateString('en-US', { month:'short', day:'numeric' })} – ${addDays(mon,6).toLocaleDateString('en-US', { month:'short', day:'numeric' })}`;
+
+  const todayISO = toISODate(base);
+  const days = Array.from({ length:7 }, (_, i) => { const d = addDays(mon,i); return { d, iso: toISODate(d) }; });
+  const COLS  = 7;
+  const GUTTER_W = 48; // px for time gutter
+
+  // ── Header ────────────────────────────────────────────────────────────────
+  const hd = document.getElementById('sched-hd');
+  hd.className = 'cal-header';
+  hd.style.gridTemplateColumns = `${GUTTER_W}px repeat(${COLS},1fr)`;
+  hd.innerHTML = `<div class="cal-hd-gutter" style="height:52px;"></div>` +
+    days.map(({ d, iso }) => {
+      const isToday = iso === todayISO;
+      return `<div class="cal-hd-cell${isToday ? ' today' : ''}">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;">${d.toLocaleDateString('en-US',{weekday:'short'})}</div>
+        <div class="cal-hd-day">${d.getDate()}</div>
+      </div>`;
+    }).join('');
+
+  // ── Body grid ─────────────────────────────────────────────────────────────
+  const bdy = document.getElementById('sched-body');
+  bdy.innerHTML = '';
+  const totalPx = CAL_TOTAL_H * CAL_PX_PER_H;
+
+  const grid = document.createElement('div');
+  grid.className = 'cal-body';
+  grid.style.cssText = `grid-template-columns:${GUTTER_W}px repeat(${COLS},1fr); height:${totalPx}px; position:relative;`;
+
+  // Time gutter column
+  const gutter = document.createElement('div');
+  gutter.className = 'cal-gutter';
+  gutter.style.cssText = `grid-column:1; grid-row:1; height:${totalPx}px; position:relative; z-index:2;`;
+  for (let h = CAL_START_H; h <= CAL_END_H; h++) {
+    const pct = ((h - CAL_START_H) / CAL_TOTAL_H) * 100;
+    const lbl = document.createElement('div');
+    lbl.className = 'cal-hour-label';
+    lbl.style.top = pct + '%';
+    if (h < 24) lbl.textContent = h < 12 ? `${h}a` : h === 12 ? '12p' : `${h-12}p`;
+    else         lbl.textContent = h === 24 ? '12a' : `${h-24}a`;
+    gutter.appendChild(lbl);
   }
-  const bdy = document.getElementById('sched-body'); bdy.innerHTML = '';
-  BUNDLES.forEach(b => {
-    const pdiv = document.createElement('div'); pdiv.className = 'pair-divider'; pdiv.textContent = b.name; bdy.appendChild(pdiv);
-    [...b.items, ...(b.optional || [])].forEach(itemId => {
-      const row = document.createElement('div'); row.className = 'item-row';
-      row.innerHTML = `<div class="item-label"><div class="item-name">${ITEMS[itemId].label}</div><div class="item-type">${b.name}</div></div>`;
-      days.forEach(dateStr => {
-        const cell = document.createElement('div'); cell.className = 'day-cell' + (dateStr === todayISO ? ' today' : '');
-        bookings.filter(bk => {
-          if (!bk.itemIds.includes(itemId)) return false;
-          const dayDiff = Math.round((new Date(dateStr + 'T00:00:00') - new Date(bk.date + 'T00:00:00')) / 86400000);
-          return dayDiff >= 0 && dayDiff <= Math.floor((timeToMins(bk.endTime) - 1) / (24 * 60));
-        }).forEach(bk => {
-          const blk = document.createElement('div'); blk.className = 'booking-block';
-          blk.innerHTML = `<div class="bk-name">${escHtml(bk.name.split(' ')[0])}</div><div class="bk-time">${formatTimeStr(bk.startTime)} - ${formatTimeStr(bk.endTime)}</div>`;
-          if (window._isStaff) blk.innerHTML += `<div class="bk-staff-info">${escHtml(bk.name)} (${escHtml(bk.email)})<br>Phone: ${escHtml(formatPhone(bk.phone) || '--')}<br>ID: ${escHtml(bk.sid || '--')}<br>Booked: ${new Date(bk.createdAt).toLocaleDateString()}<br><br><button class="btn-danger" style="width:100%" onclick="event.stopPropagation();window.deleteBookingFromServer('${bk.id}')">Cancel Booking</button></div>`;
-          cell.appendChild(blk);
-        });
-        row.appendChild(cell);
-      });
-      bdy.appendChild(row);
+  grid.appendChild(gutter);
+
+  // One column per day
+  days.forEach(({ iso, d }, ci) => {
+    const col = document.createElement('div');
+    col.className = 'cal-day-col' + (iso === todayISO ? ' today' : '');
+    col.style.cssText = `grid-column:${ci+2}; grid-row:1; height:${totalPx}px; position:relative;`;
+
+    // Hour lines
+    for (let h = 0; h <= CAL_TOTAL_H; h++) {
+      const line = document.createElement('div');
+      line.className = 'cal-hour-line';
+      line.style.top = (h / CAL_TOTAL_H * 100) + '%';
+      col.appendChild(line);
+      // Half-hour dashed
+      if (h < CAL_TOTAL_H) {
+        const half = document.createElement('div');
+        half.className = 'cal-hour-line half';
+        half.style.top = ((h + 0.5) / CAL_TOTAL_H * 100) + '%';
+        col.appendChild(half);
+      }
+    }
+
+    // Bookings for this day
+    // Gather all items from all bundles (deduped by itemId)
+    const allItemIds = [...new Set(BUNDLES.flatMap(b => [...b.items, ...(b.optional||[])]))];
+    const dayBookings = bookings.filter(bk => bk.date === iso);
+
+    // Group blocks to handle horizontal overlap within a day column
+    // Simple approach: track occupied minute-ranges and offset overlapping blocks
+    const placed = []; // [{startMin, endMin, col, totalCols}]
+
+    dayBookings.forEach(bk => {
+      const startMin = timeToMins(bk.startTime);
+      const rawEnd   = timeToMins(bk.endTime);
+      const endMin   = rawEnd <= startMin ? rawEnd + 1440 : rawEnd; // overnight
+
+      // Clamp to visible window
+      const visStart = CAL_START_H * 60, visEnd = CAL_END_H * 60;
+      if (endMin <= visStart || startMin >= visEnd) return;
+      const clampStart = Math.max(startMin, visStart);
+      const clampEnd   = Math.min(endMin,   visEnd);
+
+      // Find overlapping placed blocks to determine horizontal slot
+      const overlapping = placed.filter(p => !(clampEnd <= p.startMin || clampStart >= p.endMin));
+      let slot = 0;
+      const usedSlots = overlapping.map(p => p.slot);
+      while (usedSlots.includes(slot)) slot++;
+      const totalSlots = Math.max(slot + 1, ...overlapping.map(p => p.totalSlots || 1));
+      overlapping.forEach(p => { p.totalSlots = totalSlots; }); // widen existing
+      placed.push({ startMin: clampStart, endMin: clampEnd, slot, totalSlots, bk });
     });
+
+    // Now render with final totalSlots
+    placed.forEach(({ startMin, endMin, slot, totalSlots, bk }) => {
+      const visStart = CAL_START_H * 60;
+      const topPct  = ((startMin - visStart) / (CAL_TOTAL_H * 60)) * 100;
+      const heightPx = Math.max(18, ((endMin - startMin) / (CAL_TOTAL_H * 60)) * totalPx);
+
+      // Pick a color per item (use first itemId in booking that matches our palette)
+      const repItem = bk.itemIds.find(id => ITEMS[id]) || bk.itemIds[0];
+      const clr = calColorForItem(repItem);
+
+      const slotW = (1 / totalSlots) * 100;
+      const leftPct = slot * slotW;
+
+      const blk = document.createElement('div');
+      blk.className = 'cal-block';
+      blk.style.cssText = `top:${topPct.toFixed(3)}%; height:${heightPx.toFixed(1)}px; left:calc(${leftPct.toFixed(2)}% + 3px); right:calc(${(100 - leftPct - slotW).toFixed(2)}% + 3px); background:${clr.bg}; border-left-color:${clr.bd}; color:${clr.tx};`;
+
+      const itemNames = (bk.itemLabels || bk.itemIds.map(id => ITEMS[id]?.label || id)).join(', ');
+      const shortTime = `${formatTimeStr(bk.startTime)}–${formatTimeStr(bk.endTime)}`;
+      const tall = heightPx >= 40;
+
+      blk.innerHTML = `<div class="cal-block-title">${escHtml(bk.name.split(' ')[0])}</div>` +
+        (tall ? `<div class="cal-block-meta">${shortTime}</div><div class="cal-block-equip">${escHtml(itemNames)}</div>` : '');
+
+      if (window._isStaff) {
+        blk.innerHTML += `<div class="bk-staff-info">${escHtml(bk.name)} (${escHtml(bk.email)})<br>` +
+          `Phone: ${escHtml(formatPhone(bk.phone)||'--')}<br>` +
+          `ID: ${escHtml(bk.sid||'--')}<br>` +
+          `Items: ${escHtml(itemNames)}<br>` +
+          `${shortTime}<br>` +
+          `Booked: ${new Date(bk.createdAt).toLocaleDateString()}<br><br>` +
+          `<button class="btn-danger" style="width:100%" onclick="event.stopPropagation();window.deleteBookingFromServer('${bk.id}')">Cancel Booking</button></div>`;
+      }
+
+      col.appendChild(blk);
+    });
+
+    // "Now" line for today
+    if (iso === todayISO) {
+      const now = new Date();
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      if (nowMin >= CAL_START_H * 60 && nowMin <= CAL_END_H * 60) {
+        const nowLine = document.createElement('div');
+        nowLine.className = 'cal-now-line';
+        nowLine.style.top = ((nowMin - CAL_START_H*60) / (CAL_TOTAL_H*60) * 100) + '%';
+        nowLine.innerHTML = '<div class="cal-now-dot"></div>';
+        col.appendChild(nowLine);
+      }
+    }
+
+    grid.appendChild(col);
   });
+
+  bdy.appendChild(grid);
+
+  // Scroll to show current time (or 8am start) on load
+  if (weekOffset === 0) {
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const scrollTarget = Math.max(0, ((nowMin - CAL_START_H*60 - 60) / (CAL_TOTAL_H*60)) * totalPx);
+    requestAnimationFrame(() => { bdy.scrollTop = scrollTarget; });
+  }
 }
 function formatTimeStr(t24) {
   let [h, m] = t24.split(':'); h = parseInt(h, 10);
