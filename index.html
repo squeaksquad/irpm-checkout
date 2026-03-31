@@ -116,8 +116,23 @@
   .cal-block-meta  { font-family:'IBM Plex Mono',monospace; font-size:8px; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
   .cal-block-equip { font-family:'IBM Plex Mono',monospace; font-size:8px; opacity:0.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-  /* Tooltip — position:fixed so it escapes overflow:hidden on scroll containers */
-  .cal-tooltip { display:none; position:fixed; z-index:9999; background:var(--text); color:#fff; font-family:'IBM Plex Mono',monospace; font-size:9px; padding:8px 10px; border-radius:6px; white-space:nowrap; min-width:190px; line-height:1.8; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:auto; }
+  /* Hover preview — follows cursor, no pointer-events */
+  .cal-preview { display:none; position:fixed; z-index:9998; background:var(--text); color:#fff; font-family:'IBM Plex Mono',monospace; font-size:9px; padding:6px 9px; border-radius:5px; white-space:nowrap; line-height:1.7; box-shadow:0 2px 8px rgba(0,0,0,0.25); pointer-events:none; }
+
+  /* Anchored popover — appears on click, has interactive elements */
+  .cal-popover { display:none; position:fixed; z-index:9999; background:var(--surface); border:1px solid var(--border2); color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:10px; padding:0; border-radius:9px; min-width:220px; line-height:1.6; box-shadow:var(--shadow-lg); pointer-events:auto; }
+  .cal-popover.open { display:block; }
+  .cal-pop-hd { padding:10px 12px 8px; border-bottom:1px solid var(--border); }
+  .cal-pop-name { font-family:'IBM Plex Sans',sans-serif; font-size:13px; font-weight:600; color:var(--text); margin-bottom:1px; }
+  .cal-pop-time { font-size:9px; color:var(--text3); }
+  .cal-pop-body { padding:8px 12px; display:flex; flex-direction:column; gap:5px; }
+  .cal-pop-row { display:flex; align-items:center; gap:6px; }
+  .cal-pop-label { font-size:8px; color:var(--text4); text-transform:uppercase; letter-spacing:0.5px; min-width:36px; }
+  .cal-pop-val { flex:1; color:var(--text2); font-size:9px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cal-pop-copy { flex-shrink:0; background:var(--surface2); border:1px solid var(--border); color:var(--text3); font-family:'IBM Plex Mono',monospace; font-size:8px; padding:1px 6px; border-radius:3px; cursor:pointer; transition:all 0.12s; }
+  .cal-pop-copy:hover { background:var(--blue-lt); border-color:var(--blue); color:var(--blue); }
+  .cal-pop-copy.copied { background:var(--green-lt); border-color:var(--green); color:var(--green); }
+  .cal-pop-footer { padding:8px 12px; border-top:1px solid var(--border); }
 
   /* Now line */
   .cal-now-line { position:absolute; left:0; right:0; height:2px; background:var(--red); z-index:15; pointer-events:none; }
@@ -604,7 +619,7 @@ function calColorForItem(itemId) {
 
 function renderSchedule() {
   // Remove any leftover fixed tooltips from previous render
-  document.querySelectorAll('.cal-tooltip').forEach(el => el.remove());
+  document.querySelectorAll('.cal-preview, .cal-popover').forEach(el => el.remove());
 
   const base = new Date();
   const mon  = addDays(getStartOfWeek(base), weekOffset * 7);
@@ -728,28 +743,98 @@ function renderSchedule() {
         (tall ? `<div class="cal-block-meta">${shortTime}</div><div class="cal-block-equip">${escHtml(itemNames)}</div>` : '') +
         `</div>`;
 
-      // Tooltip via position:fixed (escapes all scroll+overflow contexts)
-      const tip = document.createElement('div');
-      tip.className = 'cal-tooltip';
-      tip.innerHTML = `<b>${escHtml(bk.name)}</b><br>` +
-        `${shortTime}<br>` +
-        `Items: ${escHtml(itemNames)}<br>` +
-        (window._isStaff
-          ? `Email: ${escHtml(bk.email)}<br>Phone: ${escHtml(formatPhone(bk.phone)||'--')}<br>ID: ${escHtml(bk.sid||'--')}<br>Booked: ${new Date(bk.createdAt).toLocaleDateString()}<br><br>` +
-            `<button class="btn-danger" style="width:100%" onclick="event.stopPropagation();window.deleteBookingFromServer('${bk.id}')">Cancel Booking</button>`
-          : '');
-      document.body.appendChild(tip);
+      // Hover preview (cursor-tracking, no interaction)
+      const preview = document.createElement('div');
+      preview.className = 'cal-preview';
+      preview.textContent = `${bk.name} · ${shortTime}`;
+      document.body.appendChild(preview);
 
+      // Click-anchored popover with copy buttons + cancel
+      const pop = document.createElement('div');
+      pop.className = 'cal-popover';
+      const isStaffNow = window._isStaff;
+      pop.innerHTML = `
+        <div class="cal-pop-hd">
+          <div class="cal-pop-name">${escHtml(bk.name)}</div>
+          <div class="cal-pop-time">${shortTime} · ${escHtml(itemNames)}</div>
+        </div>
+        <div class="cal-pop-body">
+          ${isStaffNow ? `
+          <div class="cal-pop-row">
+            <span class="cal-pop-label">Email</span>
+            <span class="cal-pop-val" title="${escHtml(bk.email)}">${escHtml(bk.email)}</span>
+            <button class="cal-pop-copy" data-copy="${escHtml(bk.email)}">Copy</button>
+          </div>
+          <div class="cal-pop-row">
+            <span class="cal-pop-label">ID</span>
+            <span class="cal-pop-val">${escHtml(bk.sid||'--')}</span>
+            <button class="cal-pop-copy" data-copy="${escHtml(bk.sid||'')}">Copy</button>
+          </div>
+          <div class="cal-pop-row">
+            <span class="cal-pop-label">Phone</span>
+            <span class="cal-pop-val">${escHtml(formatPhone(bk.phone)||'--')}</span>
+          </div>
+          <div class="cal-pop-row">
+            <span class="cal-pop-label">Booked</span>
+            <span class="cal-pop-val">${new Date(bk.createdAt).toLocaleDateString()}</span>
+          </div>` : `
+          <div class="cal-pop-row">
+            <span class="cal-pop-label">Items</span>
+            <span class="cal-pop-val">${escHtml(itemNames)}</span>
+          </div>`}
+        </div>
+        ${isStaffNow ? `<div class="cal-pop-footer"><button class="btn-danger" style="width:100%" data-cancel="${bk.id}">Cancel Booking</button></div>` : ''}
+      `;
+      document.body.appendChild(pop);
+
+      // Wire copy buttons
+      pop.querySelectorAll('.cal-pop-copy').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          navigator.clipboard.writeText(btn.dataset.copy).then(() => {
+            btn.textContent = 'Copied!'; btn.classList.add('copied');
+            setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+          });
+        });
+      });
+
+      // Wire cancel button
+      const cancelBtn = pop.querySelector('[data-cancel]');
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          pop.classList.remove('open');
+          window.deleteBookingFromServer(cancelBtn.dataset.cancel);
+        });
+      }
+
+      // Hover: show preview, hide popover only if it isn't anchored
+      let anchored = false;
       blk.addEventListener('mouseenter', e => {
-        tip.style.display = 'block';
-        calPositionTip(tip, e);
+        preview.style.display = 'block';
+        calPositionTip(preview, e);
       });
-      blk.addEventListener('mousemove', e => calPositionTip(tip, e));
-      blk.addEventListener('mouseleave', e => {
-        // hide only if not moving into the tip itself
-        if (!tip.contains(e.relatedTarget)) tip.style.display = 'none';
+      blk.addEventListener('mousemove', e => { if (!anchored) calPositionTip(preview, e); });
+      blk.addEventListener('mouseleave', () => { preview.style.display = 'none'; });
+
+      // Click: anchor popover next to block, dismiss preview
+      blk.addEventListener('click', e => {
+        e.stopPropagation();
+        preview.style.display = 'none';
+        const already = pop.classList.contains('open');
+        // close all other popovers
+        document.querySelectorAll('.cal-popover.open').forEach(p => p.classList.remove('open'));
+        if (already) { anchored = false; return; }
+        pop.classList.add('open');
+        anchored = true;
+        calPositionPop(pop, blk);
       });
-      tip.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+
+      // Close popover on outside click
+      document.addEventListener('click', () => {
+        if (pop.classList.contains('open')) { pop.classList.remove('open'); anchored = false; }
+      }, { capture: false });
+      pop.addEventListener('click', e => e.stopPropagation());
 
       col.appendChild(blk);
     });
@@ -781,14 +866,27 @@ function renderSchedule() {
   });
 }
 
-function calPositionTip(tip, e) {
+function calPositionTip(el, e) {
   const pad = 12, vw = window.innerWidth, vh = window.innerHeight;
-  const tw = tip.offsetWidth || 200, th = tip.offsetHeight || 120;
+  const tw = el.offsetWidth || 180, th = el.offsetHeight || 40;
   let x = e.clientX + pad, y = e.clientY + pad;
   if (x + tw > vw - pad) x = e.clientX - tw - pad;
   if (y + th > vh - pad) y = e.clientY - th - pad;
-  tip.style.left = x + 'px';
-  tip.style.top  = y + 'px';
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+}
+
+function calPositionPop(pop, blk) {
+  const pad = 8, vw = window.innerWidth, vh = window.innerHeight;
+  const br = blk.getBoundingClientRect();
+  const pw = pop.offsetWidth || 230, ph = pop.offsetHeight || 160;
+  // prefer right of block, fall back to left
+  let x = br.right + pad;
+  if (x + pw > vw - pad) x = br.left - pw - pad;
+  // align top of popover with top of block, clamp to viewport
+  let y = br.top;
+  if (y + ph > vh - pad) y = vh - ph - pad;
+  if (y < pad) y = pad;
+  pop.style.left = x + 'px'; pop.style.top = y + 'px';
 }
 function formatTimeStr(t24) {
   let [h, m] = t24.split(':'); h = parseInt(h, 10);
