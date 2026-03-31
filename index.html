@@ -5,1264 +5,1015 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>IRPM Equipment Checkout</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+// ── SUPABASE CONFIG ───────────────────────────────────────────────────────
+// Replace these with your Supabase project values
+const supabaseUrl = 'YOUR_SUPABASE_URL';
+const supabaseKey = 'YOUR_SUPABASE_ANON_KEY';
+const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+// ── AUTH STATE ────────────────────────────────────────────────────────────
+let currentUser = null;
+let isStaff = false;
+
+supabase.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) {
+    const email = session.user.email || '';
+    if (!email.endsWith('@berklee.edu')) {
+      showToast('Only @berklee.edu accounts are allowed.', 'error');
+      await supabase.auth.signOut();
+      return;
+    }
+    currentUser = session.user;
+    
+    // Check staff status by triggering the Edge Function to read the Google Sheet
+    try {
+      const { data, error } = await supabase.functions.invoke('check-admin');
+      if (data?.isAdmin) {
+        await supabase.auth.refreshSession(); // Refresh token to get the admin claim
+        isStaff = true;
+      } else {
+        isStaff = false;
+      }
+    } catch(err) {
+      console.error("Admin check failed", err);
+      isStaff = false;
+    }
+    
+    onSignedIn();
+  } else {
+    currentUser = null;
+    isStaff = false;
+    onSignedOut();
+  }
+});
+
+function onSignedIn() {
+  document.getElementById('auth-bar').innerHTML = `
+    <span class="auth-email">${currentUser.email}</span>
+    ${isStaff ? '<span class="staff-badge">STAFF</span>' : ''}
+    <button class="btn-ghost" onclick="window.doSignOut()">Sign out</button>
+  `;
+  document.getElementById('sign-in-wall').style.display = 'none';
+  document.getElementById('checkout-content').style.display = 'block';
+  if (isStaff) document.getElementById('staff-panel').style.display = 'block';
+  subscribeBookings();
+}
+
+function onSignedOut() {
+  document.getElementById('auth-bar').innerHTML = `
+    <button class="btn-primary" onclick="window.doSignIn()">
+      <svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:-2px"><path fill="currentColor" d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 110-12.064c1.498 0 2.866.549 3.921 1.453l2.814-2.814A9.969 9.969 0 0012.545 2C7.021 2 2.543 6.477 2.543 12s4.478 10 10.002 10c8.396 0 10.249-7.85 9.426-11.748l-9.426-.013z"/></svg>
+      Sign in with Google
+    </button>
+  `;
+  document.getElementById('sign-in-wall').style.display = 'flex';
+  document.getElementById('checkout-content').style.display = 'none';
+  document.getElementById('staff-panel').style.display = 'none';
+  if (window.bookingsChannel) { 
+    supabase.removeChannel(window.bookingsChannel); 
+    window.bookingsChannel = null; 
+  }
+  bookings = [];
+  if (typeof refreshAllViews === 'function') refreshAllViews();
+}
+
+window.doSignIn = async () => {
+  await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { queryParams: { hd: 'berklee.edu' } }
+  });
+};
+window.doSignOut = async () => {
+  await supabase.auth.signOut();
+};
+
+// ── SUPABASE SUBSCRIPTION & FETCHING ──────────────────────────────────────
+function subscribeBookings() {
+  if (window.bookingsChannel) {
+    supabase.removeChannel(window.bookingsChannel);
+  }
+  
+  if (typeof setSyncState === 'function') setSyncState(true);
+  
+  // Fetch initial data immediately
+  fetchBookings();
+
+  // Listen for realtime changes
+  window.bookingsChannel = supabase
+    .channel('public:bookings')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, payload => {
+      fetchBookings();
+    })
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        if (typeof setSyncState === 'function') setSyncState(false, 'ok');
+      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+        if (typeof setSyncState === 'function') setSyncState(false, 'error');
+      }
+    });
+}
+
+async function fetchBookings() {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*')
+    .order('date', { ascending: true })
+    .order('start_time', { ascending: true });
+    
+  if (error) {
+    console.error('Supabase fetch error:', error);
+    if (typeof setSyncState === 'function') setSyncState(false, 'error');
+    return;
+  }
+  
+  if (data) {
+    // Map SQL snake_case back to frontend camelCase expectations
+    bookings = data.map(d => ({
+      id: d.id,
+      group: d.group_name,
+      itemIds: d.item_ids,
+      itemLabels: d.item_labels,
+      date: d.date,
+      startTime: d.start_time,
+      endTime: d.end_time,
+      name: d.name,
+      email: d.email,
+      phone: d.phone,
+      sid: d.sid,
+      staffNote: d.staff_note,
+      calendarEventId: d.calendar_event_id,
+      createdBy: d.created_by,
+      createdAt: d.created_at,
+    }));
+    if (typeof refreshAllViews === 'function') refreshAllViews();
+    if (typeof setSyncState === 'function') setSyncState(false, 'ok');
+  }
+}
+
+// ── SUPABASE WRITES ───────────────────────────────────────────────────────
+window.saveBookingToServer = async (booking) => {
+  const { id, ...data } = booking;
+  
+  const dbData = {
+    group_name: data.group,
+    item_ids: data.itemIds,
+    item_labels: data.itemLabels,
+    date: data.date,
+    start_time: data.startTime,
+    end_time: data.endTime,
+    name: data.name,
+    email: data.email,
+    phone: data.phone,
+    sid: data.sid,
+    created_by: currentUser.email
+  };
+
+  const { error } = await supabase.from('bookings').insert([dbData]);
+  if (error) {
+    console.error("Error saving booking:", error);
+    if (typeof showToast === 'function') showToast('Error saving reservation.', 'error');
+  }
+};
+
+window.deleteBookingFromServer = async (bookingId) => {
+  // If not staff, ensure they own it before trying to delete
+  if (!isStaff) {
+    const { data: b, error: fetchErr } = await supabase
+      .from('bookings')
+      .select('created_by')
+      .eq('id', bookingId)
+      .single();
+      
+    if (fetchErr || b.created_by !== currentUser.email) {
+      if (typeof showToast === 'function') showToast('You can only delete your own reservations.', 'error');
+      return;
+    }
+  }
+  
+  const { error } = await supabase.from('bookings').delete().match({ id: bookingId });
+  if (error) {
+    console.error("Error deleting:", error);
+    if (typeof showToast === 'function') showToast('Error deleting reservation.', 'error');
+  }
+};
+
+window.saveStaffNoteToServer = async (bookingId, note) => {
+  if (!isStaff) return;
+  const { error } = await supabase.from('bookings').update({ 
+    staff_note: note,
+    staff_note_by: currentUser.email,
+    staff_note_at: new Date().toISOString()
+  }).match({ id: bookingId });
+  
+  if (error) {
+    console.error("Error saving note:", error);
+    if (typeof showToast === 'function') showToast('Error saving note.', 'error');
+  }
+};
+
+window.exportToCSV = async () => {
+  const btn = document.getElementById('export-btn');
+  btn.disabled = true; btn.textContent = 'Exporting…';
+  try {
+    // Generates CSV locally from the fetched Supabase data
+    const header = ['ID','Items','Date','Start','End','Name','Email','Phone','StudentID','StaffNote','Created'];
+    const rows = bookings.map(b => [
+      b.id, (b.itemLabels||[]).join(' + '), b.date, b.startTime, b.endTime,
+      b.name, b.email, b.phone || '', b.sid || '',
+      b.staffNote || '', b.createdAt
+    ]);
+    
+    const csvContent = [header, ...rows]
+      .map(e => e.map(String).map(v => v.replaceAll('"', '""')).map(v => `"${v}"`).join(","))
+      .join("\n");
+      
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `irpm-bookings-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  } catch(e) { 
+    if (typeof showToast === 'function') showToast('Export failed: ' + e.message, 'error'); 
+  }
+  finally { btn.disabled = false; btn.textContent = 'Export CSV'; }
+};
+</script>
+
 <style>
   :root {
-    --bg:      #f4f5f7;
-    --surface: #ffffff;
+    --bg:       #f4f5f7;
+    --surface:  #ffffff;
     --surface2: #f8f9fb;
-    --border:  #e2e5eb;
-    --border2: #cdd1da;
-    --blue:    #2563eb;
-    --blue-lt: #dbeafe;
-    --blue-dk: #1d4ed8;
-    --green:   #16a34a;
+    --border:   #e2e5eb;
+    --border2:  #cdd1da;
+    --blue:     #2563eb;
+    --blue-lt:  #dbeafe;
+    --blue-dk:  #1d4ed8;
+    --green:    #16a34a;
     --green-lt: #dcfce7;
-    --red:     #dc2626;
-    --red-lt:  #fee2e2;
-    --amber:   #d97706;
+    --red:      #dc2626;
+    --red-lt:   #fee2e2;
+    --amber:    #d97706;
     --amber-lt: #fef3c7;
-    --text:    #111827;
-    --text2:   #374151;
-    --text3:   #6b7280;
-    --text4:   #9ca3af;
-    --shadow:  0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px var(--border);
-    --shadow-lg: 0 4px 16px rgba(0,0,0,0.10), 0 0 0 1px var(--border);
+    --purple:   #7c3aed;
+    --purple-lt:#ede9fe;
+    --text:     #111827;
+    --text2:    #374151;
+    --text3:    #6b7280;
+    --text4:    #9ca3af;
+    --shadow:   0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px var(--border);
+    --shadow-lg:0 4px 16px rgba(0,0,0,0.10), 0 0 0 1px var(--border);
   }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'IBM Plex Sans',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased; }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* ── HEADER ── */
+  header { background:var(--surface); border-bottom:1px solid var(--border); padding:0 28px; height:58px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:50; }
+  .logo { display:flex; align-items:center; gap:10px; }
+  .logo-mark { width:34px; height:34px; border-radius:8px; background:var(--blue); color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
+  .logo-text { font-size:15px; font-weight:700; letter-spacing:-0.2px; }
+  .logo-sub  { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text4); letter-spacing:0.5px; margin-top:1px; }
+  #auth-bar  { display:flex; align-items:center; gap:10px; }
+  .auth-email{ font-size:13px; color:var(--text2); }
+  .staff-badge { font-family:'IBM Plex Mono',monospace; font-size:9px; background:var(--purple-lt); color:var(--purple); border:1px solid #c4b5fd; padding:2px 7px; border-radius:4px; letter-spacing:0.5px; }
+  .btn-primary { background:var(--blue); color:#fff; border:none; font-family:'IBM Plex Sans',sans-serif; font-weight:600; font-size:13px; padding:8px 16px; border-radius:7px; cursor:pointer; transition:background 0.15s; display:flex; align-items:center; gap:6px; }
+  .btn-primary:hover { background:var(--blue-dk); }
+  .btn-ghost  { background:none; border:1px solid var(--border2); color:var(--text3); font-family:'IBM Plex Sans',sans-serif; font-size:13px; padding:6px 12px; border-radius:7px; cursor:pointer; transition:all 0.15s; }
+  .btn-ghost:hover { border-color:var(--border2); color:var(--text); background:var(--surface2); }
 
-  body {
-    font-family: 'IBM Plex Sans', sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    -webkit-font-smoothing: antialiased;
+  nav { display:flex; gap:6px; align-items:center; margin-right:12px; }
+  .nav-btn { padding:7px 14px; border-radius:7px; border:1px solid transparent; background:transparent; color:var(--text3); font-family:'IBM Plex Sans',sans-serif; font-size:13px; font-weight:500; cursor:pointer; transition:all 0.15s; }
+  .nav-btn:hover  { color:var(--text); background:var(--bg); border-color:var(--border); }
+  .nav-btn.active { color:var(--text); background:var(--bg); border-color:var(--border2); }
+  .nav-btn.nav-cta { background:var(--blue); color:#fff; border-color:transparent; font-weight:600; }
+  .nav-btn.nav-cta:hover { background:var(--blue-dk); }
+  .nav-btn.nav-cta.active { background:var(--blue-lt); color:var(--blue); border-color:#bfdbfe; }
+
+  .sync-pill { font-family:'IBM Plex Mono',monospace; font-size:10px; display:flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; border:1px solid var(--border2); color:var(--text3); background:var(--surface2); }
+  .sync-pill.idle  { border-color:#bbf7d0; color:var(--green); background:var(--green-lt); }
+  .sync-pill.error { border-color:#fecaca; color:var(--red);   background:var(--red-lt);  }
+  .sync-dot { width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .sync-pill.syncing .sync-dot { animation:pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+  main { max-width:1100px; margin:0 auto; padding:32px 28px; }
+  .view { display:none; } .view.active { display:block; }
+
+  /* ── SIGN IN WALL ── */
+  #sign-in-wall {
+    display:none; position:fixed; inset:0; z-index:40;
+    background:rgba(244,245,247,0.92); backdrop-filter:blur(8px);
+    flex-direction:column; align-items:center; justify-content:center; gap:16px;
+    text-align:center;
   }
-
-  /* ── HEADER ─────────────────────────────────── */
-  header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 0 28px;
-    height: 58px;
-    display: flex; align-items: center; justify-content: space-between;
-    position: sticky; top: 0; z-index: 50;
-  }
-
-  .logo { display: flex; align-items: center; gap: 10px; }
-  .logo-mark {
-    width: 34px; height: 34px; border-radius: 8px;
-    background: var(--blue); color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 700; letter-spacing: -0.3px;
-  }
-  .logo-text { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -0.2px; }
-  .logo-sub  { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--text4); letter-spacing: 0.5px; margin-top: 1px; }
-
-  nav { display: flex; gap: 6px; align-items: center; }
-  .nav-btn {
-    padding: 7px 14px; border-radius: 7px;
-    border: 1px solid transparent; background: transparent;
-    color: var(--text3); font-family: 'IBM Plex Sans', sans-serif;
-    font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s;
-  }
-  .nav-btn:hover { color: var(--text); background: var(--bg); border-color: var(--border); }
-  .nav-btn.active { color: var(--text); background: var(--bg); border-color: var(--border2); }
-  .nav-btn.nav-cta {
-    background: var(--blue); color: #fff; border-color: transparent; font-weight: 600;
-  }
-  .nav-btn.nav-cta:hover { background: var(--blue-dk); }
-  .nav-btn.nav-cta.active { background: var(--blue-lt); color: var(--blue); border-color: #bfdbfe; }
-
-  .sync-pill {
-    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
-    display: flex; align-items: center; gap: 5px;
-    padding: 4px 10px; border-radius: 20px;
-    border: 1px solid var(--border2); color: var(--text3);
-    background: var(--surface2);
-  }
-  .sync-pill.idle  { border-color: #bbf7d0; color: var(--green); background: var(--green-lt); }
-  .sync-pill.error { border-color: #fecaca; color: var(--red);   background: var(--red-lt);  }
-  .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .sync-pill.syncing .sync-dot { animation: pulse 1s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
-
-  /* ── MAIN ─────────────────────────────────────── */
-  main { max-width: 1100px; margin: 0 auto; padding: 32px 28px; }
-  .view { display: none; }
-  .view.active { display: block; }
+  .sign-in-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:40px 48px; box-shadow:var(--shadow-lg); max-width:400px; }
+  .sign-in-icon  { font-size:40px; margin-bottom:14px; }
+  .sign-in-title { font-size:22px; font-weight:700; letter-spacing:-0.3px; margin-bottom:8px; }
+  .sign-in-sub   { font-size:14px; color:var(--text3); line-height:1.6; margin-bottom:24px; }
 
   /* ── PAGE HEADER ── */
-  .page-hd {
-    display: flex; align-items: flex-start;
-    justify-content: space-between; gap: 16px;
-    margin-bottom: 24px; flex-wrap: wrap;
-  }
-  .page-title { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; color: var(--text); }
-  .page-sub   { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text4); margin-top: 3px; }
-
-  .btn-primary {
-    background: var(--blue); color: #fff; border: none;
-    font-family: 'IBM Plex Sans', sans-serif; font-weight: 600; font-size: 13px;
-    padding: 9px 18px; border-radius: 8px; cursor: pointer; transition: all 0.15s;
-    white-space: nowrap; flex-shrink: 0;
-  }
-  .btn-primary:hover { background: var(--blue-dk); }
+  .page-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
+  .page-title { font-size:22px; font-weight:700; letter-spacing:-0.4px; }
+  .page-sub   { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text4); margin-top:3px; }
 
   /* ── WEEK NAV ── */
-  .week-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
-  .week-label {
-    font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 500;
-    color: var(--text2); min-width: 170px; text-align: center;
-  }
-  .icon-btn {
-    width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--border);
-    background: var(--surface); color: var(--text2); cursor: pointer;
-    display: flex; align-items: center; justify-content: center; font-size: 15px;
-    transition: all 0.15s; flex-shrink: 0;
-  }
-  .icon-btn:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-lt); }
-  .icon-btn.text { width: auto; padding: 0 10px; font-size: 11px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.3px; }
+  .week-nav { display:flex; align-items:center; gap:8px; margin-bottom:16px; }
+  .week-label { font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:500; color:var(--text2); min-width:170px; text-align:center; }
+  .icon-btn { width:32px; height:32px; border-radius:7px; border:1px solid var(--border); background:var(--surface); color:var(--text2); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:15px; transition:all 0.15s; flex-shrink:0; }
+  .icon-btn:hover { border-color:var(--blue); color:var(--blue); background:var(--blue-lt); }
+  .icon-btn.text { width:auto; padding:0 10px; font-size:11px; font-family:'IBM Plex Mono',monospace; letter-spacing:0.3px; }
 
   /* ── SCHEDULE TABLE ── */
-  .schedule-wrap {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 12px; overflow: hidden; box-shadow: var(--shadow);
-  }
-  .schedule-header { display: grid; grid-template-columns: 156px repeat(7, 1fr); background: var(--surface2); border-bottom: 1px solid var(--border); }
-  .sched-hd-cell {
-    padding: 10px 8px; text-align: center;
-    font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500;
-    color: var(--text3); border-right: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.4px;
-  }
-  .sched-hd-cell:last-child { border-right: none; }
-  .sched-hd-cell.today { color: var(--blue); background: var(--blue-lt); }
-
-  .item-row { display: grid; grid-template-columns: 156px repeat(7, 1fr); border-bottom: 1px solid var(--border); min-height: 60px; }
-  .item-row:last-child { border-bottom: none; }
-
-  .pair-divider {
-    grid-column: 1/-1; padding: 5px 14px;
-    background: var(--surface2); border-bottom: 1px solid var(--border);
-    font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 500;
-    color: var(--text4); letter-spacing: 1.2px; text-transform: uppercase;
-    display: flex; align-items: center; gap: 10px;
-  }
-  .pair-divider::after { content:''; flex:1; height:1px; background: var(--border); }
-
-  .item-label {
-    padding: 12px 14px; border-right: 1px solid var(--border);
-    display: flex; flex-direction: column; justify-content: center; gap: 2px;
-  }
-  .item-name { font-size: 13px; font-weight: 600; color: var(--text); }
-  .item-type { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--text4); text-transform: uppercase; letter-spacing: 0.8px; }
-
-  .day-cell {
-    border-right: 1px solid var(--border); padding: 5px 4px;
-    display: flex; flex-direction: column; gap: 3px; min-height: 60px;
-  }
-  .day-cell:last-child { border-right: none; }
-  .day-cell.today { background: #eff6ff; }
-
-  .booking-block {
-    background: var(--blue-lt); border: 1px solid #bfdbfe;
-    border-radius: 4px; padding: 3px 6px;
-    font-family: 'IBM Plex Mono', monospace; font-size: 9px; line-height: 1.4;
-  }
-  .booking-block .bk-name { font-weight: 500; color: var(--text2); }
-  .booking-block .bk-time { color: var(--text3); font-size: 8px; }
+  .schedule-wrap { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; box-shadow:var(--shadow); }
+  .schedule-header { display:grid; grid-template-columns:156px repeat(7,1fr); background:var(--surface2); border-bottom:1px solid var(--border); }
+  .sched-hd-cell { padding:10px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:500; color:var(--text3); border-right:1px solid var(--border); text-transform:uppercase; letter-spacing:0.4px; }
+  .sched-hd-cell:last-child { border-right:none; }
+  .sched-hd-cell.today { color:var(--blue); background:var(--blue-lt); }
+  .item-row { display:grid; grid-template-columns:156px repeat(7,1fr); border-bottom:1px solid var(--border); min-height:60px; }
+  .item-row:last-child { border-bottom:none; }
+  .pair-divider { grid-column:1/-1; padding:5px 14px; background:var(--surface2); border-bottom:1px solid var(--border); font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:500; color:var(--text4); letter-spacing:1.2px; text-transform:uppercase; display:flex; align-items:center; gap:10px; }
+  .pair-divider::after { content:''; flex:1; height:1px; background:var(--border); }
+  .item-label { padding:12px 14px; border-right:1px solid var(--border); display:flex; flex-direction:column; justify-content:center; gap:2px; }
+  .item-name { font-size:13px; font-weight:600; color:var(--text); }
+  .item-type { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text4); text-transform:uppercase; letter-spacing:0.8px; }
+  .day-cell  { border-right:1px solid var(--border); padding:5px 4px; display:flex; flex-direction:column; gap:3px; min-height:60px; }
+  .day-cell:last-child { border-right:none; }
+  .day-cell.today { background:#eff6ff; }
+  .booking-block { background:var(--blue-lt); border:1px solid #bfdbfe; border-radius:4px; padding:3px 6px; font-family:'IBM Plex Mono',monospace; font-size:9px; line-height:1.4; cursor:pointer; transition:background 0.12s; position:relative; }
+  .booking-block:hover { background:#bfdbfe; }
+  .bk-name { font-weight:500; color:var(--text2); }
+  .bk-time { color:var(--text3); font-size:8px; }
+  /* Staff tooltip on hover */
+  .booking-block .bk-staff-info { display:none; position:absolute; left:0; top:100%; z-index:20; background:var(--text); color:#fff; font-family:'IBM Plex Mono',monospace; font-size:9px; padding:6px 8px; border-radius:5px; white-space:nowrap; min-width:160px; line-height:1.6; box-shadow:0 4px 12px rgba(0,0,0,0.2); }
+  .booking-block:hover .bk-staff-info { display:block; }
 
   /* ── CHECKOUT LAYOUT ── */
-  .checkout-cols { display: grid; grid-template-columns: 1fr 300px; gap: 20px; align-items: start; }
+  .checkout-cols { display:grid; grid-template-columns:1fr 300px; gap:20px; align-items:start; }
 
   /* ── STEP CARDS ── */
-  .step-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); margin-bottom: 16px;
-  }
-  .step-hd {
-    display: flex; align-items: center; gap: 12px;
-    padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--surface2);
-  }
-  .step-num {
-    width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
-    background: var(--blue); color: #fff;
-    font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
-  }
-  .step-num.done { background: var(--green); }
-  .step-title { font-size: 14px; font-weight: 600; color: var(--text); }
-  .step-sub   { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text3); margin-left: auto; }
-  .step-body  { padding: 20px; }
+  .step-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; box-shadow:var(--shadow); margin-bottom:16px; }
+  .step-hd   { display:flex; align-items:center; gap:12px; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--surface2); }
+  .step-num  { width:24px; height:24px; border-radius:50%; flex-shrink:0; background:var(--blue); color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .step-num.done { background:var(--green); }
+  .step-title{ font-size:14px; font-weight:600; color:var(--text); }
+  .step-sub  { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); margin-left:auto; }
+  .step-body { padding:20px; }
 
   /* ── BUNDLE PICKER ── */
-  .bundle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .bundle-card {
-    border: 2px solid var(--border); border-radius: 10px;
-    padding: 16px; cursor: pointer; transition: all 0.15s; background: var(--surface);
-  }
-  .bundle-card:hover { border-color: var(--blue); background: var(--blue-lt); }
-  .bundle-card.selected { border-color: var(--blue); background: var(--blue-lt); }
-  .bundle-name { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-  .bundle-desc { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text3); margin-bottom: 10px; }
-  .bundle-status { display: flex; gap: 8px; flex-wrap: wrap; }
-  .status-pill {
-    font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 500;
-    padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px;
-  }
-  .status-pill.free { background: var(--green-lt); color: var(--green); }
-  .status-pill.busy { background: var(--red-lt);   color: var(--red);   }
+  .bundle-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .bundle-card { border:2px solid var(--border); border-radius:10px; padding:16px; cursor:pointer; transition:all 0.15s; background:var(--surface); }
+  .bundle-card:hover    { border-color:var(--blue); background:var(--blue-lt); }
+  .bundle-card.selected { border-color:var(--blue); background:var(--blue-lt); }
+  .bundle-name { font-size:15px; font-weight:700; margin-bottom:4px; }
+  .bundle-desc { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); margin-bottom:10px; }
+  .bundle-status { display:flex; gap:8px; flex-wrap:wrap; }
+  .status-pill { font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:500; padding:2px 7px; border-radius:4px; text-transform:uppercase; letter-spacing:0.3px; }
+  .status-pill.free { background:var(--green-lt); color:var(--green); }
+  .status-pill.busy { background:var(--red-lt);   color:var(--red);   }
 
   /* ── ITEM TOGGLES ── */
-  .toggle-list { display: flex; flex-direction: column; gap: 8px; }
-  .item-toggle {
-    display: flex; align-items: center; gap: 12px;
-    border: 1px solid var(--border); border-radius: 9px;
-    padding: 12px 14px; cursor: pointer; transition: all 0.15s; background: var(--surface);
-  }
-  .item-toggle:hover:not(.unavailable) { border-color: var(--blue); }
-  .item-toggle.active  { border-color: var(--green); background: var(--green-lt); }
-  .item-toggle.unavailable { opacity: 0.4; cursor: not-allowed; }
-  .toggle-check {
-    width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid var(--border2);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; transition: all 0.15s;
-  }
-  .item-toggle.active .toggle-check { background: var(--green); border-color: var(--green); }
-  .toggle-name { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; }
-  .toggle-tag  { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text3); margin-top: 1px; }
-  .toggle-badge {
-    font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 500;
-    padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0;
-  }
-  .toggle-badge.req { background: var(--blue-lt); color: var(--blue); }
-  .toggle-badge.opt { background: var(--surface2); color: var(--text3); border: 1px solid var(--border); }
+  .toggle-list { display:flex; flex-direction:column; gap:8px; }
+  .item-toggle { display:flex; align-items:center; gap:12px; border:1px solid var(--border); border-radius:9px; padding:12px 14px; cursor:pointer; transition:all 0.15s; background:var(--surface); }
+  .item-toggle:hover:not(.unavailable) { border-color:var(--blue); }
+  .item-toggle.active  { border-color:var(--green); background:var(--green-lt); }
+  .item-toggle.unavailable { opacity:0.4; cursor:not-allowed; }
+  .toggle-check { width:20px; height:20px; border-radius:5px; border:1.5px solid var(--border2); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; flex-shrink:0; transition:all 0.15s; }
+  .item-toggle.active .toggle-check { background:var(--green); border-color:var(--green); }
+  .toggle-name  { font-size:13px; font-weight:600; flex:1; }
+  .toggle-tag   { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); margin-top:1px; }
+  .toggle-badge { font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:500; padding:2px 7px; border-radius:4px; text-transform:uppercase; letter-spacing:0.3px; flex-shrink:0; }
+  .toggle-badge.req { background:var(--blue-lt); color:var(--blue); }
+  .toggle-badge.opt { background:var(--surface2); color:var(--text3); border:1px solid var(--border); }
 
   /* ── TIMELINE ── */
-  .tl-time-row {
-    display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px;
-  }
-  .tl-time-big {
-    font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 500;
-    color: var(--text); letter-spacing: -0.5px;
-  }
-  .tl-duration-badge {
-    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
-    background: var(--surface2); border: 1px solid var(--border);
-    padding: 2px 8px; border-radius: 4px; color: var(--text3);
-  }
-
-  .date-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-  .date-label { font-size: 14px; font-weight: 600; color: var(--text); flex: 1; }
-
-  .tl-tracks { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
-  .tl-row { display: flex; align-items: center; gap: 10px; }
-  .tl-label {
-    width: 120px; flex-shrink: 0; font-size: 12px; font-weight: 500;
-    color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .tl-track {
-    flex: 1; height: 24px; background: var(--surface2);
-    border: 1px solid var(--border); border-radius: 5px; position: relative; overflow: hidden;
-  }
-  .tl-booked {
-    position: absolute; top: 0; bottom: 0;
-    background: var(--red-lt); border-left: 2px solid var(--red); border-right: 2px solid var(--red);
-    display: flex; align-items: center;
-  }
+  .tl-time-row { display:flex; align-items:baseline; gap:10px; margin-bottom:16px; }
+  .tl-time-big { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:500; color:var(--text); letter-spacing:-0.5px; }
+  .tl-duration-badge { font-family:'IBM Plex Mono',monospace; font-size:11px; background:var(--surface2); border:1px solid var(--border); padding:2px 8px; border-radius:4px; color:var(--text3); }
+  .date-nav { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+  .date-label { font-size:14px; font-weight:600; flex:1; }
+  .tl-tracks { display:flex; flex-direction:column; gap:5px; margin-bottom:8px; }
+  .tl-row { display:flex; align-items:center; gap:10px; }
+  .tl-label { width:120px; flex-shrink:0; font-size:12px; font-weight:500; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tl-track { flex:1; height:24px; background:var(--surface2); border:1px solid var(--border); border-radius:5px; position:relative; overflow:hidden; }
+  .tl-booked { position:absolute; top:0; bottom:0; background:var(--red-lt); border-left:2px solid var(--red); border-right:2px solid var(--red); display:flex; align-items:center; }
   .tl-booked-label { font-family:'IBM Plex Mono',monospace; font-size:8px; color:var(--red); padding:0 4px; white-space:nowrap; overflow:hidden; }
-  .tl-selection { position: absolute; top:0; bottom:0; border-radius:3px; }
-  .tl-selection.ok       { background:rgba(22,163,74,0.15);  border:1px solid rgba(22,163,74,0.4); }
-  .tl-selection.conflict { background:rgba(220,38,38,0.12);  border:1px solid rgba(220,38,38,0.35); }
-  .tl-selection.inactive { background:rgba(0,0,0,0.04);       border:1px solid var(--border); }
-
+  .tl-selection { position:absolute; top:0; bottom:0; border-radius:3px; }
+  .tl-selection.ok { background:rgba(22,163,74,0.15); border:1px solid rgba(22,163,74,0.4); }
+  .tl-selection.conflict { background:rgba(220,38,38,0.12); border:1px solid rgba(220,38,38,0.35); }
+  .tl-selection.inactive { background:rgba(0,0,0,0.04); border:1px solid var(--border); }
   .tl-ticks { display:flex; padding-left:130px; margin-bottom:4px; }
-  .tl-tick {
-    flex:1; font-family:'IBM Plex Mono',monospace; font-size:8px;
-    color:var(--text4); text-align:left; padding-left:2px;
-    border-left:1px solid var(--border);
-  }
-  .tl-sublabel {
-    font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text4);
-    display:flex; gap:8px; justify-content:center; align-items:center;
-    padding-left:130px; margin-bottom:14px;
-  }
+  .tl-tick { flex:1; position:relative; height:8px; border-left:1px solid var(--border2); }
+  .tl-tick-label { position:absolute; top:10px; left:-12px; font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text4); }
+  .tl-legend { display:flex; gap:12px; padding-left:130px; margin-top:16px; font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text3); text-transform:uppercase; letter-spacing:0.5px; }
+  .legend-item { display:flex; align-items:center; gap:4px; }
+  .legend-box { width:10px; height:10px; border-radius:2px; }
 
-  /* ── SLIDER ── */
-  .slider-wrap {
-    position: relative; height: 32px;
-    display: flex; align-items: center;
-    padding-left: 130px; margin-bottom: 6px;
-  }
-  .range-track {
-    position: absolute; left: 130px; right: 0; height: 4px;
-    background: var(--border); border-radius: 2px;
-    user-select: none; -webkit-user-select: none; touch-action: none;
-  }
-  .range-fill {
-    position: absolute; height: 4px; background: var(--blue);
-    border-radius: 2px; pointer-events: none;
-  }
-  .range-fill.conflict { background: var(--red); }
-  .range-center {
-    position: absolute; height: 4px; top: 0;
-    cursor: grab; pointer-events: all; border-radius: 2px;
-    background: rgba(37,99,235,0.12); z-index: 1;
-  }
-  .range-center:active { cursor: grabbing; }
-  .range-handle {
-    position: absolute; width: 16px; height: 16px;
-    top: 50%; transform: translate(-50%, -50%);
-    border-radius: 50%; background: #fff;
-    border: 2px solid var(--blue);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-    cursor: ew-resize; pointer-events: all; z-index: 2;
-    transition: box-shadow 0.12s, transform 0.1s; touch-action: none;
-  }
-  .range-handle:hover { transform: translate(-50%,-50%) scale(1.2); box-shadow: 0 0 0 4px rgba(37,99,235,0.15); }
-  .range-handle.dragging { box-shadow: 0 0 0 5px rgba(37,99,235,0.2); }
-
-  .conflict-warn {
-    display: none; margin-top: 10px; padding: 9px 12px;
-    background: var(--red-lt); border: 1px solid #fca5a5;
-    border-radius: 7px; font-size: 13px; color: var(--red); font-weight: 500;
-  }
-  .conflict-warn.visible { display: block; }
-  .tl-conflict-note {
-    font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--red);
-    display:none; margin-top:6px; padding:7px 10px;
-    background:var(--red-lt); border-radius:5px; border:1px solid #fca5a5; line-height:1.5;
-  }
-  .tl-conflict-note.visible { display:block; }
+  /* ── RANGE SLIDER ── */
+  .slider-wrap { margin-top:24px; padding:0 10px; }
+  .noui-custom .noUi-target { background:var(--border); border:none; box-shadow:none; height:6px; border-radius:3px; }
+  .noui-custom .noUi-connect { background:var(--blue); }
+  .noui-custom .noUi-handle { width:20px; height:20px; border-radius:50%; background:#fff; border:2px solid var(--blue); box-shadow:0 1px 3px rgba(0,0,0,0.1); cursor:grab; right:-10px; top:-7px; }
+  .noui-custom .noUi-handle:active { cursor:grabbing; transform:scale(1.1); }
+  .noui-custom .noUi-handle::before, .noui-custom .noUi-handle::after { display:none; }
+  .noui-custom .noUi-pips { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text4); padding-top:8px; }
+  .noui-custom .noUi-value { margin-top:4px; }
+  .noui-custom .noUi-marker { background:var(--border2); }
 
   /* ── FORM FIELDS ── */
-  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .field { display: flex; flex-direction: column; gap: 5px; }
-  .field.full { grid-column: 1/-1; }
-  .field label {
-    font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500;
-    color: var(--text3); text-transform: uppercase; letter-spacing: 0.6px;
-  }
-  .field label span { font-size: 9px; color: var(--text4); font-family: 'IBM Plex Sans', sans-serif; text-transform: none; letter-spacing: 0; }
-  .field input {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 7px; padding: 9px 12px;
-    font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; color: var(--text);
-    outline: none; transition: border-color 0.15s; width: 100%;
-  }
-  .field input::placeholder { color: var(--text4); }
-  .field input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+  .form-group { margin-bottom:16px; }
+  .form-label { display:block; font-size:12px; font-weight:600; color:var(--text2); margin-bottom:6px; }
+  .form-input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-family:'IBM Plex Sans',sans-serif; font-size:14px; outline:none; transition:all 0.15s; background:var(--surface2); }
+  .form-input:focus { border-color:var(--blue); background:#fff; box-shadow:0 0 0 3px var(--blue-lt); }
 
-  .submit-btn {
-    width: 100%; margin-top: 20px; padding: 12px;
-    background: var(--blue); border: none; border-radius: 8px;
-    font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 600;
-    color: #fff; cursor: pointer; transition: all 0.15s;
-  }
-  .submit-btn:hover:not(:disabled) { background: var(--blue-dk); }
-  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .summary-box { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:20px; }
+  .summary-row { display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px; }
+  .summary-val { font-weight:600; }
 
-  /* ── SIDEBAR ── */
-  .sidebar-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 12px; padding: 18px; box-shadow: var(--shadow);
-    position: sticky; top: 74px;
-  }
-  .sidebar-title { font-size: 13px; font-weight: 700; color: var(--text2); margin-bottom: 12px; }
-  .res-item {
-    border: 1px solid var(--border); border-radius: 8px;
-    padding: 11px 13px; margin-bottom: 8px; position: relative;
-    background: var(--surface2);
-  }
-  .res-item:last-child { margin-bottom: 0; }
-  .res-name  { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; padding-right: 22px; }
-  .res-meta  { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text3); line-height: 1.6; }
-  .res-badge {
-    display: inline-block; font-family:'IBM Plex Mono',monospace; font-size:8px;
-    background:var(--green-lt); color:var(--green); border:1px solid #bbf7d0;
-    padding:1px 6px; border-radius:3px; letter-spacing:0.5px; margin-bottom:4px;
-  }
-  .del-btn {
-    position:absolute; top:9px; right:9px;
-    background:none; border:none; color:var(--text4); cursor:pointer;
-    font-size:12px; padding:2px 4px; border-radius:3px; transition:all 0.12s;
-  }
-  .del-btn:hover { color:var(--red); background:var(--red-lt); }
-
-  /* ── MODAL ── */
-  .modal-overlay {
-    position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.45);
-    backdrop-filter:blur(4px); display:none; align-items:center; justify-content:center; padding:20px;
-  }
-  .modal-overlay.open { display:flex; }
-  .modal-card {
-    background:var(--surface); border:1px solid var(--border);
-    border-radius:14px; padding:28px; max-width:420px; width:100%;
-    box-shadow:var(--shadow-lg); position:relative;
-  }
-  .modal-icon  { font-size:32px; margin-bottom:12px; display:block; }
-  .modal-title { font-size:20px; font-weight:700; color:var(--text); margin-bottom:14px; letter-spacing:-0.3px; }
-  .modal-body  { font-size:13px; color:var(--text2); line-height:1.7; margin-bottom:20px; }
-  .modal-body strong { color:var(--text); font-weight:600; }
-  .modal-body .hint {
-    margin-top:12px; padding:10px 12px;
-    background:var(--blue-lt); border:1px solid #bfdbfe;
-    border-radius:7px; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--blue);
-    line-height:1.6;
-  }
-  .modal-close {
-    position:absolute; top:14px; right:14px;
-    background:var(--surface2); border:1px solid var(--border);
-    color:var(--text3); width:26px; height:26px; border-radius:6px;
-    cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center;
-    transition:all 0.12s;
-  }
-  .modal-close:hover { background:var(--border); color:var(--text); }
-  .modal-confirm-btn {
-    width:100%; padding:12px; border:none; border-radius:8px;
-    background:var(--blue); color:#fff;
-    font-family:'IBM Plex Sans',sans-serif; font-size:14px; font-weight:600;
-    cursor:pointer; transition:all 0.15s; display:flex; align-items:center; justify-content:center; gap:8px;
-  }
-  .modal-confirm-btn:hover { background:var(--blue-dk); }
-  .modal-confirm-btn.done  { background:var(--green); cursor:default; }
+  /* ── SIDEBAR CARDS ── */
+  .side-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; box-shadow:var(--shadow); margin-bottom:16px; }
+  .side-hd { padding:14px 16px; border-bottom:1px solid var(--border); font-size:13px; font-weight:600; background:var(--surface2); display:flex; justify-content:space-between; }
+  .side-body { padding:16px; }
+  .mini-booking { border-bottom:1px solid var(--border); padding:10px 0; }
+  .mini-booking:last-child { border-bottom:none; padding-bottom:0; }
+  .mini-bk-name { font-size:13px; font-weight:600; margin-bottom:2px; display:flex; justify-content:space-between; }
+  .mini-bk-time { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); margin-bottom:6px; }
+  .mini-bk-items{ font-size:11px; color:var(--text2); line-height:1.4; margin-bottom:8px; }
+  .btn-danger { font-family:'IBM Plex Sans',sans-serif; font-size:11px; color:var(--red); background:var(--red-lt); border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-weight:500; }
+  .btn-danger:hover { background:#fca5a5; }
 
   /* ── TOAST ── */
-  .toast {
-    position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(12px);
-    background:var(--text); color:#fff; padding:10px 18px; border-radius:8px;
-    font-size:13px; font-weight:500; opacity:0; transition:all 0.22s;
-    pointer-events:none; z-index:200; white-space:nowrap;
-    box-shadow:0 4px 16px rgba(0,0,0,0.2);
-  }
-  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
-  .toast.error   { background:var(--red); }
-  .toast.success { background:var(--green); }
+  #toast { position:fixed; bottom:24px; right:24px; padding:12px 20px; border-radius:8px; font-size:13px; font-weight:500; color:#fff; box-shadow:var(--shadow-lg); z-index:100; opacity:0; pointer-events:none; transform:translateY(10px); transition:all 0.3s; }
+  #toast.show { opacity:1; transform:translateY(0); }
+  #toast.success { background:var(--green); }
+  #toast.error { background:var(--red); }
 
-  .empty-state { color:var(--text4); font-size:12px; text-align:center; padding:20px 0; line-height:1.7; }
+  /* ── MODAL ── */
+  .modal-overlay { position:fixed; inset:0; background:rgba(17,24,39,0.4); backdrop-filter:blur(4px); z-index:100; display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity 0.2s; }
+  .modal-overlay.open { opacity:1; pointer-events:auto; }
+  .modal-card { background:var(--surface); border-radius:16px; padding:32px; width:400px; max-width:90vw; box-shadow:var(--shadow-lg); transform:scale(0.95); transition:transform 0.2s; }
+  .modal-overlay.open .modal-card { transform:scale(1); }
+  .modal-icon { width:48px; height:48px; border-radius:50%; background:var(--green-lt); color:var(--green); display:flex; align-items:center; justify-content:center; font-size:24px; margin-bottom:16px; }
+  .modal-title{ font-size:20px; font-weight:700; margin-bottom:8px; }
+  .modal-body { font-size:14px; color:var(--text2); line-height:1.6; margin-bottom:24px; }
+  .modal-body .hint { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface2); padding:8px; border-radius:6px; margin-top:12px; }
 
-  /* ── MOBILE ── */
-  @media (max-width: 860px) {
-    .checkout-cols { grid-template-columns: 1fr; }
-    header { padding: 0 16px; }
-    main   { padding: 20px 16px; }
-    .logo-sub { display: none; }
-  }
-  @media (max-width: 640px) {
-    .bundle-grid { grid-template-columns: 1fr; }
-    .field-grid  { grid-template-columns: 1fr; }
-    .schedule-header { display: none; }
-    .item-row    { display: block; padding: 12px 14px; min-height: unset; }
-    .item-label  { border-right: none; padding: 0 0 8px; }
-    .day-cell    { display: none; }
-    .day-cell.mobile-active { display: block; min-height: 36px; padding: 4px 0; }
-    .mobile-day-nav {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 9px 12px; background: var(--surface); border: 1px solid var(--border);
-      border-radius: 9px; margin-bottom: 12px;
-    }
-    .mobile-day-label { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text2); text-align:center; flex:1; }
-    .tl-ticks   { padding-left: 0; }
-    .tl-sublabel { padding-left: 0; }
-    .slider-wrap { padding-left: 0; }
-    .range-track { left: 0; }
-    .tl-label   { width: 100%; }
-    .tl-row     { flex-direction: column; gap: 3px; }
-    .tl-booked-label { display: none; }
-    .modal-card { padding: 20px 16px; }
-  }
+  /* Layout util */
+  .mt-4 { margin-top:16px; }
 </style>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
+
 </head>
 <body>
+
+<div id="sign-in-wall">
+  <div class="sign-in-card">
+    <div class="sign-in-icon">🎹</div>
+    <div class="sign-in-title">IRPM Equipment Checkout</div>
+    <div class="sign-in-sub">Sign in with your Berklee Google account to reserve equipment and practice spaces.</div>
+    <div id="auth-btn-wrap"></div> </div>
+</div>
 
 <header>
   <div class="logo">
     <div class="logo-mark">IR</div>
     <div>
-      <div class="logo-text">IRPM Checkout</div>
-      <div class="logo-sub">EQUIPMENT RESERVATION SYSTEM</div>
+      <div class="logo-text">IRPM Equipment</div>
+      <div class="logo-sub">STUDIO OPERATIONS</div>
     </div>
   </div>
-  <div style="display:flex;align-items:center;gap:10px;">
-    <div id="sync-indicator" class="sync-pill" style="display:none"></div>
+  <div style="display:flex; align-items:center;">
     <nav>
-      <button class="nav-btn active" id="nav-availability" onclick="switchView('availability')">Schedule</button>
-      <button class="nav-btn nav-cta" id="nav-checkout" onclick="switchView('checkout')">+ New Checkout</button>
+      <button class="nav-btn active" onclick="switchView('schedule')">Schedule</button>
+      <button class="nav-btn nav-cta" onclick="switchView('checkout')">New Request</button>
     </nav>
+    <div id="auth-bar"></div>
   </div>
 </header>
 
 <main>
-
-  <!-- ── AVAILABILITY VIEW ── -->
-  <div class="view active" id="view-availability">
+  <div id="view-schedule" class="view active">
     <div class="page-hd">
       <div>
-        <div class="page-title">Equipment Schedule</div>
-        <div class="page-sub">// BUNDLE + STAND BAG PAIRS — BOTH CAN BE CHECKED OUT SIMULTANEOUSLY</div>
+        <h1 class="page-title">Master Schedule</h1>
+        <div class="page-sub">View all reservations</div>
       </div>
-      <button class="btn-primary" onclick="switchView('checkout')">+ Reserve Equipment</button>
+      <div id="sync-status" class="sync-pill idle"><div class="sync-dot"></div> Live</div>
     </div>
     <div class="week-nav">
-      <button class="icon-btn" onclick="changeWeek(-1)">&#8249;</button>
-      <div class="week-label" id="week-label">—</div>
-      <button class="icon-btn" onclick="changeWeek(1)">&#8250;</button>
-      <button class="icon-btn text" onclick="goToToday()">TODAY</button>
+      <button class="icon-btn text" onclick="weekOffset=0; renderSchedule();">TODAY</button>
+      <button class="icon-btn" onclick="weekOffset--; renderSchedule();">‹</button>
+      <div class="week-label" id="week-label">...</div>
+      <button class="icon-btn" onclick="weekOffset++; renderSchedule();">›</button>
     </div>
     <div class="schedule-wrap">
-      <div class="schedule-header" id="schedule-header">
-        <div class="sched-hd-cell" style="text-align:left;padding-left:14px;">ITEM</div>
-      </div>
-      <div id="schedule-body"></div>
+      <div class="schedule-header" id="sched-hd"></div>
+      <div id="sched-body"></div>
     </div>
   </div>
 
-  <!-- ── CHECKOUT VIEW ── -->
-  <div class="view" id="view-checkout">
+  <div id="view-checkout" class="view">
     <div class="page-hd">
       <div>
-        <div class="page-title">New Checkout</div>
-        <div class="page-sub">// SELECT EQUIPMENT, CHOOSE YOUR TIME, FILL IN YOUR DETAILS</div>
+        <h1 class="page-title">New Request</h1>
+        <div class="page-sub">Reserve equipment bundles</div>
       </div>
     </div>
 
     <div class="checkout-cols">
-      <div>
-
-        <!-- STEP 1 -->
+      <div class="co-main">
         <div class="step-card">
           <div class="step-hd">
-            <div class="step-num" id="step1-num">1</div>
-            <div class="step-title">Choose a Bundle</div>
+            <div class="step-num" id="s1-num">1</div>
+            <div class="step-title">Select Bundle</div>
+            <div class="step-sub">CHOOSE ONE</div>
           </div>
-          <div class="step-body">
-            <div class="bundle-grid" id="group-selector"></div>
-          </div>
+          <div class="step-body bundle-grid" id="bundle-list"></div>
         </div>
 
-        <!-- STEP 2 -->
-        <div class="step-card" id="step2-card" style="opacity:0.45;pointer-events:none;">
+        <div class="step-card">
           <div class="step-hd">
-            <div class="step-num" id="step2-num">2</div>
-            <div class="step-title">Select Items</div>
-            <div class="step-sub" id="step2-sub">Choose bundle first</div>
+            <div class="step-num" id="s2-num">2</div>
+            <div class="step-title">Select Date & Time</div>
+            <div class="step-sub" id="tl-selected-text">NOT SET</div>
           </div>
-          <div class="step-body">
-            <div class="toggle-list" id="toggle-grid"></div>
-          </div>
-        </div>
-
-        <!-- STEP 3: DATE & TIME -->
-        <div class="step-card" id="step3-card" style="opacity:0.45;pointer-events:none;">
-          <div class="step-hd">
-            <div class="step-num" id="step3-num">3</div>
-            <div class="step-title">Select Date &amp; Time</div>
-            <div class="tl-time-big" id="tl-time-display" style="margin-left:auto;font-size:15px;">—</div>
-          </div>
-          <div class="step-body">
-            <div style="display:none" id="tl-data-notice"></div>
-
+          <div class="step-body" style="opacity:0.4; pointer-events:none;" id="step2-body">
             <div class="date-nav">
-              <button class="icon-btn" onclick="tlChangeDay(-1)">&#8249;</button>
-              <div class="date-label" id="tl-date-label">—</div>
-              <button class="icon-btn" onclick="tlChangeDay(1)">&#8250;</button>
-              <button class="icon-btn text" onclick="tlGoToday()">TODAY</button>
+              <button class="icon-btn" onclick="tlChangeDate(-1)">‹</button>
+              <div class="date-label" id="tl-date-label">...</div>
+              <button class="icon-btn" onclick="tlChangeDate(1)">›</button>
+              <button class="icon-btn text" onclick="tlDate=new Date(); tlDate.setHours(0,0,0,0); tlRender();">TODAY</button>
+            </div>
+            
+            <div class="tl-time-row">
+              <div class="tl-time-big" id="tl-display-time">10:00 AM - 12:00 PM</div>
+              <div class="tl-duration-badge" id="tl-display-dur">2 hrs</div>
             </div>
 
-            <div class="tl-ticks" id="tl-ticks"></div>
-            <div class="tl-sublabel" id="tl-day-sublabel"></div>
             <div class="tl-tracks" id="tl-tracks"></div>
+            
+            <div class="tl-ticks">
+              <div class="tl-tick"><div class="tl-tick-label">10a</div></div>
+              <div class="tl-tick"><div class="tl-tick-label">12p</div></div>
+              <div class="tl-tick"><div class="tl-tick-label">2p</div></div>
+              <div class="tl-tick"><div class="tl-tick-label">4p</div></div>
+              <div class="tl-tick"><div class="tl-tick-label">6p</div></div>
+              <div class="tl-tick"><div class="tl-tick-label">8p</div></div>
+              <div class="tl-tick"><div class="tl-tick-label">10p</div></div>
+              <div class="tl-tick" style="border:none;"></div>
+            </div>
+            <div class="tl-legend">
+              <div class="legend-item"><div class="legend-box" style="background:var(--red-lt); border:1px solid var(--red);"></div> Unavailable</div>
+              <div class="legend-item"><div class="legend-box" style="background:rgba(22,163,74,0.15); border:1px solid rgba(22,163,74,0.4);"></div> Selected</div>
+            </div>
 
-            <div class="slider-wrap">
-              <div class="range-track">
-                <div class="range-fill" id="range-fill"></div>
-                <div class="range-center" id="range-center"></div>
-                <div class="range-handle" id="range-handle-start"></div>
-                <div class="range-handle" id="range-handle-end"></div>
-              </div>
-            </div>
-            <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text4);text-align:center;margin-bottom:4px;">
-              DRAG HANDLES TO SET WINDOW · DRAG CENTER TO SHIFT · <span id="tl-duration">8h 0m</span>
-            </div>
-            <div class="tl-conflict-note" id="tl-conflict-note"></div>
+            <div class="slider-wrap"><div id="tl-slider" class="noui-custom"></div></div>
           </div>
         </div>
 
-        <!-- STEP 4: YOUR DETAILS -->
-        <div class="step-card" id="step4-card" style="opacity:0.45;pointer-events:none;">
+        <div class="step-card">
           <div class="step-hd">
-            <div class="step-num" id="step4-num">4</div>
+            <div class="step-num" id="s3-num">3</div>
             <div class="step-title">Your Details</div>
           </div>
-          <div class="step-body">
-            <div class="conflict-warn" id="conflict-warn"></div>
-            <div class="field-grid">
-              <div class="field full">
-                <label>Full Name</label>
-                <input type="text" id="f-name" placeholder="Jane Smith">
+          <div class="step-body" style="opacity:0.4; pointer-events:none;" id="step3-body">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+              <div class="form-group">
+                <label class="form-label">Name</label>
+                <input type="text" id="f-name" class="form-input" placeholder="First Last">
               </div>
-              <div class="field">
-                <label>Email <span>(invited to calendar event)</span></label>
-                <input type="email" id="f-email" placeholder="you@berklee.edu">
-              </div>
-              <div class="field">
-                <label>Phone <span>(private — not on calendar)</span></label>
-                <input type="tel" id="f-phone" placeholder="(555) 000-0000">
-              </div>
-              <div class="field">
-                <label>Student ID</label>
-                <input type="text" id="f-sid" placeholder="e.g. 1234567">
+              <div class="form-group">
+                <label class="form-label">Berklee Email</label>
+                <input type="email" id="f-email" class="form-input" placeholder="username@berklee.edu" readonly style="background:#f3f4f6; color:#6b7280;">
               </div>
             </div>
-            <input type="hidden" id="f-date">
-            <input type="hidden" id="f-start">
-            <input type="hidden" id="f-end">
-            <button class="submit-btn" id="submit-btn" onclick="handleSubmit()">Create Reservation</button>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+              <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input type="tel" id="f-phone" class="form-input" placeholder="000-000-0000">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Student ID (Optional)</label>
+                <input type="text" id="f-sid" class="form-input" placeholder="0000000">
+              </div>
+            </div>
           </div>
         </div>
 
       </div>
 
-      <!-- SIDEBAR -->
-      <div>
-        <div class="sidebar-card">
-          <div class="sidebar-title">Current Reservations</div>
-          <div id="booking-list-sidebar"></div>
+      <div class="co-side">
+        <div class="side-card">
+          <div class="side-hd">Request Summary</div>
+          <div class="side-body">
+            <div class="summary-box">
+              <div class="summary-row"><span style="color:var(--text3)">Bundle</span><span id="sum-bundle" class="summary-val">-</span></div>
+              <div class="summary-row"><span style="color:var(--text3)">Date</span><span id="sum-date" class="summary-val">-</span></div>
+              <div class="summary-row"><span style="color:var(--text3)">Time</span><span id="sum-time" class="summary-val">-</span></div>
+            </div>
+            <button class="btn-primary" style="width:100%; justify-content:center; padding:12px; font-size:14px;" id="btn-submit" disabled onclick="submitBooking()">Submit Request</button>
+            <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); text-align:center; margin-top:12px; line-height:1.4;">
+              By submitting, you agree to the IRPM equipment policy. A calendar invite will be sent.
+            </div>
+          </div>
+        </div>
+
+        <div class="side-card" id="my-bookings-card" style="display:none;">
+          <div class="side-hd">My Upcoming</div>
+          <div class="side-body" id="my-bookings-list" style="padding-top:6px;"></div>
+        </div>
+
+        <div class="side-card" id="staff-panel" style="display:none; border-color:var(--purple); background:var(--purple-lt);">
+          <div class="side-hd" style="background:var(--purple); color:#fff; border:none; display:flex; align-items:center; gap:8px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Staff Tools
+          </div>
+          <div class="side-body">
+            <button class="btn-ghost" style="width:100%; background:#fff; margin-bottom:8px;" id="export-btn" onclick="window.exportToCSV()">Export CSV</button>
+            <div style="font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--purple); opacity:0.8; text-align:center;">You can delete any booking from the schedule view.</div>
+          </div>
         </div>
       </div>
     </div>
   </div>
-
 </main>
 
-<!-- MODAL -->
+<div id="toast"></div>
+
 <div class="modal-overlay" id="modal">
   <div class="modal-card">
-    <button class="modal-close" onclick="closeModal()">✕</button>
-    <span class="modal-icon">✅</span>
-    <div class="modal-title">Reservation Created!</div>
-    <div class="modal-body" id="modal-body"></div>
-    <button class="modal-confirm-btn" id="confirm-btn" onclick="confirmReservation()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-      Confirm &amp; Send
-    </button>
+    <div class="modal-icon">✓</div>
+    <div class="modal-title">Request Confirmed</div>
+    <div class="modal-body" id="modal-text"></div>
+    <button class="btn-primary" style="width:100%; justify-content:center;" onclick="closeModal(); switchView('schedule');">View Schedule</button>
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
-
 <script>
-
-// ── CONFIG ────────────────────────────────────────────────────────────────
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwpFPALtw4cMf54SB_rbByT1mT6w618-0pKZuwY_Ug81eo38MDk8T6opD2-xYGqYJnv/exec';
-const USING_SHEETS = true;
-
-// ── DATA ──
-const ITEMS = [
-  { id: 'bundle1', name: 'IRPM Bundle 1', icon: '🎸', type: 'BUNDLE',   group: 1, required: true  },
-  { id: 'stand1',  name: 'IRPM Stand Bag 1', icon: '🎒', type: 'STAND BAG', group: 1, required: false },
-  { id: 'bundle2', name: 'IRPM Bundle 2', icon: '🎸', type: 'BUNDLE',   group: 2, required: true  },
-  { id: 'stand2',  name: 'IRPM Stand Bag 2', icon: '🎒', type: 'STAND BAG', group: 2, required: false },
-];
-const GROUPS = [
-  { id: 1, label: 'Bundle 1', desc: 'Bundle 1 · Stand Bag 1' },
-  { id: 2, label: 'Bundle 2', desc: 'Bundle 2 · Stand Bag 2' },
+// ── DATA DEFINITIONS ──────────────────────────────────────────────────────
+const BUNDLES = [
+  { id:'b1', name:'Mobile Rig 1', desc:'Apollo Twin X + MacBook Pro + Cables', items:['m1_apollo','m1_mac'] },
+  { id:'b2', name:'Mobile Rig 2', desc:'Apollo Twin X + MacBook Pro + Cables', items:['m2_apollo','m2_mac'] },
+  { id:'b3', name:'Field Recorder', desc:'Zoom F6 + NTG3 Mic + Boom Pole', items:['zoom_f6','ntg3'] },
+  { id:'b4', name:'Synth Station', desc:'Moog Sub37 + Prophet Rev2', items:['moog','prophet'] }
 ];
 
-function lsGet(key, fallback) { try { const v = localStorage.getItem(key); return v !== null ? v : fallback; } catch(e) { return fallback; } }
-function lsSet(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
+const ITEMS = {
+  'm1_apollo': { label:'Apollo Twin (Rig 1)' },
+  'm1_mac':    { label:'MacBook Pro (Rig 1)' },
+  'm2_apollo': { label:'Apollo Twin (Rig 2)' },
+  'm2_mac':    { label:'MacBook Pro (Rig 2)' },
+  'zoom_f6':   { label:'Zoom F6 Recorder' },
+  'ntg3':      { label:'Rode NTG3 Shotgun' },
+  'moog':      { label:'Moog Sub37' },
+  'prophet':   { label:'Prophet Rev2' }
+};
 
-let bookings = JSON.parse(lsGet('irpm_bookings', '[]'));
-let selectedGroup = null;
-let selectedItemIds = [];
-let isSyncing = false;
-
-// ── SYNC STATE ──
-function setSyncState(active, text) {
-  isSyncing = active;
-  const el = document.getElementById('sync-pill');
-  const notice = document.getElementById('tl-data-notice');
-  if (!el) return;
-  if (!USING_SHEETS) { el.style.display = 'none'; if (notice) notice.style.display = 'block'; return; }
-  if (notice) notice.style.display = 'none';
-  el.style.display = 'flex';
-  el.className = 'sync-pill ' + (active ? 'syncing' : (text === 'error' ? 'error' : 'idle'));
-  el.innerHTML = active
-    ? `<span class="sync-dot"></span> Syncing…`
-    : text === 'error'
-      ? `<span class="sync-dot"></span> Sync error — showing cached data`
-      : `<span class="sync-dot"></span> Live · ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
-}
-
-async function fetchBookingsFromSheets() {
-  if (!USING_SHEETS) return;
-  setSyncState(true);
-  try {
-    const res  = await fetch(APPS_SCRIPT_URL + '?action=list', { cache: 'no-store' });
-    const data = await res.json();
-    if (data.status === 'ok') {
-      bookings = data.bookings;
-      lsSet('irpm_bookings', JSON.stringify(bookings));
-      setSyncState(false, 'ok');
-      refreshAllViews();
-    } else throw new Error(data.message || 'Unknown error');
-  } catch(e) { console.warn('Sheets fetch failed:', e); setSyncState(false, 'error'); }
-}
-
-async function saveBookingToSheets(booking) {
-  lsSet('irpm_bookings', JSON.stringify(bookings));
-  if (!USING_SHEETS) return true;
-  setSyncState(true);
-  try {
-    const res  = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: JSON.stringify({ booking }) });
-    const data = await res.json();
-    if (data.status !== 'ok') throw new Error(data.message);
-    setSyncState(false, 'ok');
-    await fetchBookingsFromSheets();
-    return true;
-  } catch(e) { console.warn('Sheets write failed:', e); setSyncState(false, 'error'); showToast('Saved locally — Sheets sync failed.', 'error'); return false; }
-}
-
-async function deleteBookingFromSheets(id) {
-  bookings = bookings.filter(b => b.id !== id);
-  lsSet('irpm_bookings', JSON.stringify(bookings));
-  refreshAllViews();
-  if (!USING_SHEETS) return;
-  try {
-    await fetch(`${APPS_SCRIPT_URL}?action=delete&id=${encodeURIComponent(id)}`);
-    await fetchBookingsFromSheets();
-  } catch(e) { console.warn('Sheets delete failed:', e); setSyncState(false, 'error'); }
-}
-
-function refreshAllViews() { tlInitSliders(); syncHiddenInputs(); tlRender();
-renderSchedule(); renderGroupSelector(); renderSidebar();
-fetchBookingsFromSheets(); tlRender(); }
-
-// ── VIEWS ──
-function switchView(v) {
-  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
-  document.getElementById('view-' + v).classList.add('active');
-  document.getElementById('nav-availability').classList.toggle('active', v === 'availability');
-  document.getElementById('nav-checkout').classList.toggle('active', v === 'checkout');
-  if (v === 'availability') renderSchedule();
-  if (v === 'checkout') { renderGroupSelector(); renderSidebar(); tlRender(); }
-}
-
-// ── DATE UTILS ──
-function getWeekDays(offset) {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) + offset * 7);
-  return Array.from({length:7}, (_,i) => { const d = new Date(monday); d.setDate(monday.getDate()+i); return d; });
-}
-function fmtDate(d) {
-  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return MONTHS[d.getMonth()] + ' ' + d.getDate();
-}
-function fmtDay(d) {
-  const DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
-  return DAYS[d.getDay()];
-}
-function isToday(d) {
-  const t = new Date(); t.setHours(0,0,0,0);
-  const dc = new Date(d); dc.setHours(0,0,0,0);
-  return t.getTime() === dc.getTime();
-}
-function dateStr(d) {
-  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${dd}`;
-}
-function timeToMin(t) { const [h,m] = t.split(':').map(Number); return h*60+m; }
-function minToTime(m) { const h=Math.floor(m/60)%24, mm=m%60; return `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`; }
-function minToTime12(m) {
-  const totalMins = m % 1440;
-  const h = Math.floor(totalMins / 60), mm = totalMins % 60;
-  const period = h < 12 ? 'am' : 'pm';
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return mm === 0 ? `${h12}${period}` : `${h12}:${String(mm).padStart(2,'0')}${period}`;
-}
-function timeStr12(t) {
-  const [h, m] = t.split(':').map(Number);
-  const period = h < 12 ? 'am' : 'pm';
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return m === 0 ? `${h12}${period}` : `${h12}:${String(m).padStart(2,'0')}${period}`;
-}
-function getBookingsForItemDay(itemId, ds) { return bookings.filter(b => b.itemIds.includes(itemId) && b.date === ds); }
-
-// ── SCHEDULE ──
+let bookings = [];
 let weekOffset = 0;
-let mobileDayIndex = 0; // 0-6, which day of the week to show on mobile
-function renderSchedule() {
-  const days = getWeekDays(weekOffset);
-  document.getElementById('week-label').textContent = `${fmtDate(days[0])} — ${fmtDate(days[6])}`;
-  const header = document.getElementById('schedule-header');
-  header.innerHTML = `<div class="sched-hd-cell" style="text-align:left;padding-left:14px;">ITEM</div>`;
-  days.forEach(d => {
-    const cls = isToday(d) ? 'sched-hd-cell today' : 'sched-hd-cell';
-    header.innerHTML += `<div class="${cls}">${fmtDay(d)}<br>${fmtDate(d)}</div>`;
-  });
-  // Mobile day nav
-  const isMobile = window.innerWidth <= 640;
-  if (mobileDayIndex >= days.length) mobileDayIndex = 0;
-  let mobileNav = document.getElementById('mobile-day-nav');
-  if (!mobileNav) {
-    mobileNav = document.createElement('div');
-    mobileNav.id = 'mobile-day-nav';
-    mobileNav.className = 'mobile-day-nav';
-    mobileNav.innerHTML = `<button class="icon-btn" onclick="mobileDayIndex=Math.max(0,mobileDayIndex-1);renderSchedule()">‹</button><div class="mobile-day-label" id="mobile-day-label"></div><button class="icon-btn" onclick="mobileDayIndex=Math.min(6,mobileDayIndex+1);renderSchedule()">›</button>`;
-    const grid = document.querySelector('.schedule-grid');
-    if (grid) grid.parentNode.insertBefore(mobileNav, grid);
+let selBundleId = null;
+
+// ── UI HELPERS ────────────────────────────────────────────────────────────
+function switchView(v) {
+  document.querySelectorAll('.view').forEach(e => e.classList.remove('active'));
+  document.getElementById('view-'+v).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(e => e.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  if(v==='schedule') renderSchedule();
+  if(v==='checkout') { tlRender(); updateMyBookings(); }
+}
+
+function setSyncState(isSyncing, status) {
+  const p = document.getElementById('sync-status');
+  if (isSyncing) {
+    p.className = 'sync-pill syncing'; p.innerHTML = '<div class="sync-dot"></div> Syncing...';
+  } else {
+    p.className = 'sync-pill ' + (status==='error'?'error':'idle');
+    p.innerHTML = `<div class="sync-dot"></div> ${status==='error'?'Offline':'Live'}`;
   }
-  mobileNav.style.display = isMobile ? 'flex' : 'none';
-  const mobileLabel = document.getElementById('mobile-day-label');
-  if (mobileLabel) mobileLabel.textContent = `${fmtDay(days[mobileDayIndex])} · ${fmtDate(days[mobileDayIndex])}`;
-  const body = document.getElementById('schedule-body');
-  body.innerHTML = '';
-  [1, 2].forEach(grp => {
-    const groupItems = ITEMS.filter(i => i.group === grp);
-    const g = GROUPS.find(g => g.id === grp);
-    const divider = document.createElement('div');
-    divider.className = 'pair-divider';
-    divider.textContent = `${g.label.toUpperCase()} — ${g.desc}`;
-    body.appendChild(divider);
-    groupItems.forEach(item => {
-      const row = document.createElement('div'); row.className = 'item-row';
-      row.innerHTML = `<div class="item-label"><div class="item-name">${item.icon} ${item.name}</div><div class="item-type">${item.type}</div></div>`;
-      days.forEach((d, dayIdx) => {
-        const ds = dateStr(d);
-        const dayBookings = getBookingsForItemDay(item.id, ds);
+}
+
+function refreshAllViews() { renderSchedule(); tlRender(); updateMyBookings(); }
+
+// ── SCHEDULE VIEW ─────────────────────────────────────────────────────────
+function getStartOfWeek(d) {
+  const copy = new Date(d);
+  const day = copy.getDay();
+  const diff = copy.getDate() - day + (day === 0 ? -6 : 1); // Monday start
+  copy.setDate(diff); copy.setHours(0,0,0,0); return copy;
+}
+function addDays(d, days) { const c=new Date(d); c.setDate(c.getDate()+days); return c; }
+function toISODate(d) { const tz=d.getTimezoneOffset()*60000; return new Date(d-tz).toISOString().split('T')[0]; }
+
+function renderSchedule() {
+  const base = new Date();
+  const mon = addDays(getStartOfWeek(base), weekOffset*7);
+  
+  const mStr = mon.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const sStr = addDays(mon,6).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  document.getElementById('week-label').textContent = `${mStr} - ${sStr}`;
+
+  const hd = document.getElementById('sched-hd'); hd.innerHTML='';
+  hd.appendChild(Object.assign(document.createElement('div'),{className:'sched-hd-cell',textContent:'Equipment'}));
+  
+  const days = []; const todayISO = toISODate(base);
+  for(let i=0; i<7; i++) {
+    const d = addDays(mon,i); days.push(toISODate(d));
+    const cell = document.createElement('div');
+    cell.className = 'sched-hd-cell' + (toISODate(d)===todayISO ? ' today':'');
+    cell.innerHTML = `${d.toLocaleDateString('en-US',{weekday:'short'})}<br><span style="font-size:12px; color:var(--text);">${d.getDate()}</span>`;
+    hd.appendChild(cell);
+  }
+
+  const bdy = document.getElementById('sched-body'); bdy.innerHTML='';
+  
+  BUNDLES.forEach(b => {
+    const pdiv = document.createElement('div'); pdiv.className='pair-divider';
+    pdiv.textContent = b.name; bdy.appendChild(pdiv);
+
+    b.items.forEach(itemId => {
+      const row = document.createElement('div'); row.className='item-row';
+      row.innerHTML = `<div class="item-label">
+        <div class="item-name">${ITEMS[itemId].label}</div>
+        <div class="item-type">${b.name}</div>
+      </div>`;
+      
+      days.forEach(dateStr => {
         const cell = document.createElement('div');
-        const mobileActive = dayIdx === mobileDayIndex ? ' mobile-active' : '';
-        cell.className = 'day-cell' + (isToday(d) ? ' today' : '') + mobileActive;
-        if (dayBookings.length === 0) {
-          cell.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;"><div style="width:38%;height:2px;background:rgba(74,222,128,0.13);border-radius:2px;"></div></div>`;
-        } else {
-          dayBookings.forEach(b => {
-            const blk = document.createElement('div'); blk.className = 'booking-block';
-            blk.innerHTML = `<div class="bk-name">${escHtml(b.name)}</div><div class="bk-time">${timeStr12(b.startTime)}–${timeStr12(b.endTime)}</div>`;
-            blk.title = `${b.name} | ID: ${b.sid} | ${b.startTime}–${b.endTime}`;
-            cell.appendChild(blk);
-          });
-        }
+        cell.className = 'day-cell' + (dateStr===todayISO ? ' today':'');
+        
+        // Find bookings for this item on this day
+        const dayBks = bookings.filter(bk => bk.date === dateStr && bk.itemIds.includes(itemId));
+        dayBks.forEach(bk => {
+          const blk = document.createElement('div'); blk.className='booking-block';
+          blk.innerHTML = `<div class="bk-name">${escHtml(bk.name.split(' ')[0])}</div><div class="bk-time">${formatTimeStr(bk.startTime)}</div>`;
+          
+          if (window._isStaff) {
+            blk.innerHTML += `<div class="bk-staff-info">
+              ${escHtml(bk.name)} (${escHtml(bk.email)})<br>
+              Phone: ${escHtml(bk.phone||'--')}<br>
+              ID: ${escHtml(bk.sid||'--')}<br>
+              Booked: ${new Date(bk.createdAt).toLocaleDateString()}<br><br>
+              <button class="btn-danger" style="width:100%" onclick="event.stopPropagation(); window.deleteBookingFromServer('${bk.id}')">Cancel Booking</button>
+            </div>`;
+          }
+          cell.appendChild(blk);
+        });
         row.appendChild(cell);
       });
-      body.appendChild(row);
+      bdy.appendChild(row);
     });
   });
 }
-function changeWeek(dir) { weekOffset += dir; renderSchedule(); }
-function goToToday() { weekOffset = 0; renderSchedule(); }
 
-// ── TIMELINE ──
-let tlDate = new Date(); tlDate.setHours(0,0,0,0);
-let tlStartStep = 36, tlEndStep = 68;
-const TL_STEPS = 192, TL_MINS = 48 * 60;
-
-function stepToMin(s) { return s * 15; }
-function tlDateStr() { return dateStr(tlDate); }
-function tlNextDateStr() { const d = new Date(tlDate); d.setDate(d.getDate()+1); return dateStr(d); }
-function tlFmtDateLabel(d) {
-  const WDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  return WDAYS[d.getDay()] + ', ' + MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
-}
-function tlChangeDay(dir) { tlDate = new Date(tlDate); tlDate.setDate(tlDate.getDate()+dir); tlRender(); syncHiddenInputs(); checkConflict(); }
-function tlGoToday() { tlDate = new Date(); tlDate.setHours(0,0,0,0); tlRender(); syncHiddenInputs(); checkConflict(); }
-
-function syncHiddenInputs() {
-  const startMin = stepToMin(tlStartStep), endMin = stepToMin(tlEndStep);
-  document.getElementById('f-date').value  = tlDateStr();
-  document.getElementById('f-start').value = minToTime(startMin % 1440);
-  document.getElementById('f-end').value   = minToTime(endMin % 1440);
+function formatTimeStr(t24) {
+  let [h,m] = t24.split(':'); h=parseInt(h,10);
+  const ampm = h>=12 ? 'PM' : 'AM';
+  h = h%12 || 12; return `${h}:${m} ${ampm}`;
 }
 
-function bookingToAbsRange(b, refDateStr, nextDateStr) {
-  const sMin = timeToMin(b.startTime), eMin = timeToMin(b.endTime);
-  const isOvernight = eMin <= sMin;
-  if (b.date === refDateStr) {
-    return [sMin, isOvernight ? 1440 + eMin : eMin];
-  } else if (b.date === nextDateStr) {
-    const absStart = 1440 + sMin;
-    return [absStart, isOvernight ? 2880 + eMin : 1440 + eMin];
+// ── CHECKOUT ENGINE ───────────────────────────────────────────────────────
+let tlDate = new Date();
+let tlStartMins = 10*60; // 10am
+let tlEndMins   = 12*60; // 12pm
+const START_OF_DAY = 10*60;
+const END_OF_DAY   = 22*60;
+
+function renderBundlePicker() {
+  const wrap = document.getElementById('bundle-list'); wrap.innerHTML='';
+  BUNDLES.forEach(b => {
+    const card = document.createElement('div');
+    card.className = 'bundle-card' + (selBundleId===b.id?' selected':'');
+    card.onclick = () => { selBundleId=b.id; renderBundlePicker(); tlRender(); checkValid(); document.getElementById('step2-body').style.opacity=1; document.getElementById('step2-body').style.pointerEvents='auto'; };
+    card.innerHTML = `
+      <div class="bundle-name">${b.name}</div>
+      <div class="bundle-desc">${b.desc}</div>
+      <div class="bundle-status">
+        ${b.items.map(iid => `<span class="status-pill free">${ITEMS[iid].label.split(' ')[0]}</span>`).join('')}
+      </div>
+    `;
+    wrap.appendChild(card);
+  });
+  
+  const b = BUNDLES.find(x=>x.id===selBundleId);
+  document.getElementById('sum-bundle').textContent = b ? b.name : '-';
+  document.getElementById('s1-num').className = 'step-num' + (b?' done':'');
+}
+
+function tlChangeDate(dir) {
+  tlDate.setDate(tlDate.getDate()+dir); tlRender();
+}
+
+function checkAvailability(dateStr, startM, endM, items) {
+  for(const bk of bookings) {
+    if(bk.date !== dateStr) continue;
+    const bStart = timeToMins(bk.startTime);
+    const bEnd   = timeToMins(bk.endTime);
+    // Overlap check
+    if(Math.max(startM, bStart) < Math.min(endM, bEnd)) {
+      if(bk.itemIds.some(i => items.includes(i))) return false;
+    }
   }
-  return null;
+  return true;
 }
-function getBookingsFor48h(itemId) {
-  const ds = tlDateStr(), nd = tlNextDateStr();
-  return bookings.filter(b => b.itemIds.includes(itemId) && (b.date === ds || b.date === nd));
-}
+
+function timeToMins(t) { const [h,m]=t.split(':'); return parseInt(h)*60+parseInt(m); }
+function minsToTime(m) { const h=Math.floor(m/60); const mm=m%60; return `${h.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`; }
 
 function tlRender() {
-  const ds = tlDateStr(), nd = tlNextDateStr();
-  const nextDate = new Date(tlDate); nextDate.setDate(tlDate.getDate()+1);
-  document.getElementById('tl-date-label').textContent = tlFmtDateLabel(tlDate);
+  document.getElementById('tl-date-label').textContent = tlDate.toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'});
+  
+  if(!selBundleId) {
+    document.getElementById('tl-tracks').innerHTML='<div style="font-size:12px; color:var(--text3); padding:20px; text-align:center; border:1px dashed var(--border); border-radius:6px;">Select a bundle above to view availability.</div>';
+    return;
+  }
+  
+  const b = BUNDLES.find(x=>x.id===selBundleId);
+  const dateStr = toISODate(tlDate);
+  const wrap = document.getElementById('tl-tracks'); wrap.innerHTML='';
+  
+  let conflict = false;
 
-  const ticksEl = document.getElementById('tl-ticks');
-  const tickHours = [0,3,6,9,12,15,18,21,24,27,30,33,36,39,42,45,48];
-  ticksEl.innerHTML = tickHours.map((h,i) => {
-    const isLast = i === tickHours.length - 1;
-    let lbl = '';
-    if (!isLast) {
-      const hh = h % 24;
-      lbl = hh === 0 ? (h === 0 ? '12a' : '<span style="color:var(--accent2);font-size:8px">↑nxt</span>')
-          : hh < 12 ? `${hh}a` : hh === 12 ? '12p' : `${hh-12}p`;
-    }
-    return `<div class="tl-tick" style="flex:${isLast ? 0.001 : 1}">${lbl}</div>`;
-  }).join('');
-
-  const tracksEl = document.getElementById('tl-tracks');
-  tracksEl.innerHTML = '';
-  const selStartMin = stepToMin(tlStartStep), selEndMin = stepToMin(tlEndStep);
-
-  ITEMS.forEach(item => {
-    const row = document.createElement('div'); row.className = 'tl-row';
-    const lblEl = document.createElement('div'); lblEl.className = 'tl-label'; lblEl.textContent = item.name;
-    row.appendChild(lblEl);
-    const track = document.createElement('div');
-    const isSelected = selectedItemIds.includes(item.id);
-    track.className = 'tl-track' + (isSelected ? ' is-selected-item' : '');
-    track.style.position = 'relative';
-    const midDiv = document.createElement('div');
-    midDiv.style.cssText = 'position:absolute;top:0;bottom:0;left:50%;width:1px;background:rgba(255,255,255,0.08);pointer-events:none;z-index:1;';
-    track.appendChild(midDiv);
-    const allBks = getBookingsFor48h(item.id);
-    let hasConflict = false;
-    allBks.forEach(b => {
-      const range = bookingToAbsRange(b, ds, nd); if (!range) return;
-      const [absStart, absEnd] = range;
-      const seg = document.createElement('div'); seg.className = 'tl-booked';
-      seg.style.left = (absStart / TL_MINS * 100) + '%';
-      seg.style.width = ((absEnd - absStart) / TL_MINS * 100) + '%';
-      const segLbl = document.createElement('div'); segLbl.className = 'tl-booked-label'; segLbl.textContent = b.name;
-      seg.appendChild(segLbl); track.appendChild(seg);
-      if (!(absEnd <= selStartMin || absStart >= selEndMin)) hasConflict = true;
+  b.items.forEach(iid => {
+    const row = document.createElement('div'); row.className='tl-row';
+    const track = document.createElement('div'); track.className='tl-track';
+    
+    // Draw booked blocks
+    const itemBks = bookings.filter(bk => bk.date===dateStr && bk.itemIds.includes(iid));
+    itemBks.forEach(bk => {
+      const sM = timeToMins(bk.startTime); const eM = timeToMins(bk.endTime);
+      if(eM<=START_OF_DAY || sM>=END_OF_DAY) return;
+      const left = ((sM-START_OF_DAY)/(END_OF_DAY-START_OF_DAY))*100;
+      const wid  = ((eM-sM)/(END_OF_DAY-START_OF_DAY))*100;
+      track.innerHTML += `<div class="tl-booked" style="left:${left}%; width:${wid}%;"><div class="tl-booked-label">${escHtml(bk.name.split(' ')[0])}</div></div>`;
     });
-    const sel = document.createElement('div');
-    sel.style.left  = (selStartMin / TL_MINS * 100) + '%';
-    sel.style.width = ((selEndMin - selStartMin) / TL_MINS * 100) + '%';
-    sel.className = 'tl-selection ' + (isSelected ? (hasConflict ? 'conflict' : 'ok') : 'inactive');
-    track.appendChild(sel); row.appendChild(track); tracksEl.appendChild(row);
+    
+    // Check local selection conflict
+    let trkConf = false;
+    itemBks.forEach(bk => {
+      const sM = timeToMins(bk.startTime); const eM = timeToMins(bk.endTime);
+      if(Math.max(tlStartMins, sM) < Math.min(tlEndMins, eM)) trkConf = true;
+    });
+    if(trkConf) conflict=true;
+
+    // Draw selection block
+    const sLeft = ((tlStartMins-START_OF_DAY)/(END_OF_DAY-START_OF_DAY))*100;
+    const sWid  = ((tlEndMins-tlStartMins)/(END_OF_DAY-START_OF_DAY))*100;
+    track.innerHTML += `<div class="tl-selection ${trkConf?'conflict':'ok'}" style="left:${sLeft}%; width:${sWid}%;"></div>`;
+
+    row.innerHTML = `<div class="tl-label">${ITEMS[iid].label}</div>`;
+    row.appendChild(track); wrap.appendChild(row);
   });
 
-  const subLbl = document.getElementById('tl-day-sublabel');
-  if (subLbl) subLbl.innerHTML = `<span>${fmtDate(tlDate)}</span><span style="color:var(--border2)">·····</span><span>midnight</span><span style="color:var(--border2)">·····</span><span>${fmtDate(nextDate)}</span>`;
-
-  const diffMin = selEndMin - selStartMin;
-  const hh = Math.floor(diffMin/60), mm = diffMin % 60;
-  const crossesMidnight = selEndMin >= 1440;
-  const nextDateDisp = new Date(tlDate); nextDateDisp.setDate(tlDate.getDate()+1);
-  const startLabel = crossesMidnight
-    ? `${fmtDate(tlDate)} ${minToTime12(selStartMin)}`
-    : minToTime12(selStartMin);
-  const endLabel = crossesMidnight
-    ? `${fmtDate(nextDateDisp)} ${minToTime12(selEndMin)}`
-    : minToTime12(selEndMin);
-  document.getElementById('tl-time-display').textContent = `${startLabel} – ${endLabel}`;
-  document.getElementById('tl-duration').textContent = `${hh}h${mm > 0 ? ` ${mm}m` : ''}`;
-
-  const fillEl = document.getElementById('range-fill');
-
-  const conflictItems = selectedItemIds.filter(id => getBookingsFor48h(id).some(b => {
-    const range = bookingToAbsRange(b, ds, nd); if (!range) return false;
-    return !(range[1] <= selStartMin || range[0] >= selEndMin);
-  }));
-  const noteEl = document.getElementById('tl-conflict-note');
-  if (conflictItems.length > 0) {
-    fillEl.classList.add('conflict');
-    noteEl.textContent = `⚠ Conflict: ${conflictItems.map(id => ITEMS.find(i=>i.id===id)?.name).join(', ')} already booked during this window`;
-    noteEl.classList.add('visible');
-  } else { fillEl.classList.remove('conflict'); noteEl.classList.remove('visible'); }
+  const btn = document.getElementById('btn-submit');
+  if(conflict || tlDate < new Date().setHours(0,0,0,0)) {
+    document.getElementById('tl-selected-text').textContent = 'UNAVAILABLE';
+    document.getElementById('tl-selected-text').style.color = 'var(--red)';
+    document.getElementById('sum-time').textContent = 'Conflict / Invalid';
+    document.getElementById('sum-time').style.color = 'var(--red)';
+    btn.disabled = true;
+  } else {
+    document.getElementById('tl-selected-text').textContent = `${formatTimeStr(minsToTime(tlStartMins))} - ${formatTimeStr(minsToTime(tlEndMins))}`;
+    document.getElementById('tl-selected-text').style.color = 'var(--text3)';
+    document.getElementById('sum-time').textContent = `${formatTimeStr(minsToTime(tlStartMins))} - ${formatTimeStr(minsToTime(tlEndMins))}`;
+    document.getElementById('sum-time').style.color = 'var(--text)';
+    document.getElementById('sum-date').textContent = tlDate.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    checkValid(); // checks form too
+  }
 }
 
 function tlInitSliders() {
-  const MIN_GAP = 2, MAX_GAP = 95;
-  tlStartStep = 36; tlEndStep = 68;
+  const s = document.getElementById('tl-slider');
+  noUiSlider.create(s, {
+    start: [START_OF_DAY, START_OF_DAY+120], connect: true,
+    step: 30, range: { 'min': START_OF_DAY, 'max': END_OF_DAY },
+    margin: 30, // min 30m
+    pips: { mode:'values', values:[10*60, 12*60, 14*60, 16*60, 18*60, 20*60, 22*60], density:4, format:{to:v=>formatTimeStr(minsToTime(v))} }
+  });
+  s.noUiSlider.on('update', vals => {
+    tlStartMins = parseInt(vals[0]); tlEndMins = parseInt(vals[1]);
+    document.getElementById('tl-display-time').textContent = `${formatTimeStr(minsToTime(tlStartMins))} - ${formatTimeStr(minsToTime(tlEndMins))}`;
+    const durM = tlEndMins - tlStartMins;
+    document.getElementById('tl-display-dur').textContent = `${Math.floor(durM/60)}h ${durM%60>0?durM%60+'m':''}`;
+    if(selBundleId) tlRender();
+  });
+}
 
-  const track    = document.querySelector('.range-track');
-  const fillEl   = document.getElementById('range-fill');
-  const centerEl = document.getElementById('range-center');
-  const handleS  = document.getElementById('range-handle-start');
-  const handleE  = document.getElementById('range-handle-end');
+function checkValid() {
+  const ok1 = !!selBundleId;
+  const ok2 = document.getElementById('sum-time').textContent !== 'Conflict / Invalid' && document.getElementById('sum-time').textContent !== '-';
+  const ok3 = document.getElementById('f-name').value.trim() !== '' && document.getElementById('f-email').value.trim() !== '' && document.getElementById('f-phone').value.trim() !== '';
+  
+  document.getElementById('s2-num').className = 'step-num' + (ok2?' done':'');
+  document.getElementById('s3-num').className = 'step-num' + (ok3?' done':'');
+  document.getElementById('btn-submit').disabled = !(ok1&&ok2&&ok3);
+}
 
-  function pxToStep(clientX) {
-    const r = track.getBoundingClientRect();
-    return Math.round(Math.max(0, Math.min(TL_STEPS, (clientX - r.left) / r.width * TL_STEPS)));
-  }
+['f-name','f-phone'].forEach(id => document.getElementById(id).addEventListener('input', checkValid));
 
-  function updateDOM() {
-    const sl = (tlStartStep / TL_STEPS * 100).toFixed(3) + '%';
-    const el = (tlEndStep   / TL_STEPS * 100).toFixed(3) + '%';
-    const w  = ((tlEndStep - tlStartStep) / TL_STEPS * 100).toFixed(3) + '%';
-    fillEl.style.left    = sl;
-    fillEl.style.width   = w;
-    centerEl.style.left  = sl;
-    centerEl.style.width = w;
-    handleS.style.left   = sl;
-    handleE.style.left   = el;
-    // sync conflict class
-    if (fillEl.classList.contains('conflict')) {
-      centerEl.style.background = 'rgba(239,68,68,0.15)';
-    } else {
-      centerEl.style.background = 'rgba(74,222,128,0.08)';
+function syncHiddenInputs() {
+  setInterval(() => {
+    if(currentUser && document.getElementById('f-email').value !== currentUser.email) {
+      document.getElementById('f-email').value = currentUser.email;
+      if(!document.getElementById('f-name').value) document.getElementById('f-name').value = currentUser.displayName || '';
+      document.getElementById('step3-body').style.opacity = 1; document.getElementById('step3-body').style.pointerEvents = 'auto';
+      checkValid();
     }
-    tlRender(); syncHiddenInputs(); checkConflict();
-    if (selectedGroup) renderItemToggles();
+  }, 1000);
+}
+
+function updateMyBookings() {
+  if(!currentUser) return;
+  const list = document.getElementById('my-bookings-list'); list.innerHTML='';
+  const mine = bookings.filter(b => b.createdBy === currentUser.email && new Date(b.date+'T'+b.startTime) >= new Date().setHours(0,0,0,0));
+  if(mine.length===0) {
+    document.getElementById('my-bookings-card').style.display='none'; return;
   }
+  document.getElementById('my-bookings-card').style.display='block';
+  mine.sort((a,b)=>new Date(a.date+'T'+a.startTime) - new Date(b.date+'T'+b.startTime));
+  
+  mine.forEach(b => {
+    const el = document.createElement('div'); el.className='mini-booking';
+    el.innerHTML = `
+      <div class="mini-bk-name">${b.group} <button class="btn-danger" onclick="window.deleteBookingFromServer('${b.id}')">Cancel</button></div>
+      <div class="mini-bk-time">${new Date(b.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} • ${formatTimeStr(b.startTime)} - ${formatTimeStr(b.endTime)}</div>
+      <div class="mini-bk-items">${b.itemLabels.join(', ')}</div>
+    `;
+    list.appendChild(el);
+  });
+}
 
-  function makeDraggable(el, onDrag) {
-    el.addEventListener('pointerdown', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      this.setPointerCapture(e.pointerId);
-      this.classList.add('dragging');
-      const move = ev => { ev.preventDefault(); onDrag(ev.clientX); updateDOM(); };
-      const up   = () => {
-        this.classList.remove('dragging');
-        this.removeEventListener('pointermove', move);
-        this.removeEventListener('pointerup',   up);
-        this.removeEventListener('pointercancel', up);
-      };
-      this.addEventListener('pointermove', move);
-      this.addEventListener('pointerup',   up);
-      this.addEventListener('pointercancel', up);
-    });
+async function submitBooking() {
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+  
+  const bObj = BUNDLES.find(x=>x.id===selBundleId);
+  
+  const booking = {
+    id: 'local_'+Math.random(), // replaced by DB
+    group: bObj.name,
+    itemIds: bObj.items,
+    itemLabels: bObj.items.map(i=>ITEMS[i].label),
+    date: toISODate(tlDate),
+    startTime: minsToTime(tlStartMins),
+    endTime: minsToTime(tlEndMins),
+    name: document.getElementById('f-name').value.trim(),
+    email: currentUser.email,
+    phone: document.getElementById('f-phone').value.trim(),
+    sid: document.getElementById('f-sid').value.trim() || null
+  };
+
+  try {
+    await window.saveBookingToServer(booking);
+    showSuccessModal(booking);
+    selBundleId = null; renderBundlePicker(); tlRender(); checkValid();
+  } catch(e) {
+    showToast('Failed to submit request.', 'error');
+  } finally {
+    btn.textContent = 'Submit Request';
   }
-
-  makeDraggable(handleS, cx => {
-    let s = pxToStep(cx);
-    s = Math.max(0, Math.min(s, tlEndStep - MIN_GAP));
-    if (tlEndStep - s > MAX_GAP) s = tlEndStep - MAX_GAP;
-    tlStartStep = s;
-  });
-
-  makeDraggable(handleE, cx => {
-    let e = pxToStep(cx);
-    e = Math.max(tlStartStep + MIN_GAP, Math.min(e, TL_STEPS));
-    if (e - tlStartStep > MAX_GAP) e = tlStartStep + MAX_GAP;
-    tlEndStep = e;
-  });
-
-  // Center drag: move whole window without changing span
-  let _dragStartX, _dragS, _dragE;
-  makeDraggable(centerEl, cx => {
-    if (_dragStartX === null) return;
-    const r = track.getBoundingClientRect();
-    const dSteps = Math.round((cx - _dragStartX) / r.width * TL_STEPS);
-    let ns = _dragS + dSteps, ne = _dragE + dSteps;
-    if (ns < 0) { ne -= ns; ns = 0; }
-    if (ne > TL_STEPS) { ns -= (ne - TL_STEPS); ne = TL_STEPS; }
-    tlStartStep = Math.max(0, ns);
-    tlEndStep   = Math.min(TL_STEPS, ne);
-  });
-  centerEl.addEventListener('pointerdown', e => {
-    _dragStartX = e.clientX;
-    _dragS = tlStartStep;
-    _dragE = tlEndStep;
-  });
-
-  updateDOM();
 }
 
-// ── GROUP SELECTOR ──
-function renderGroupSelector() {
-  const sel = document.getElementById('group-selector');
-  sel.innerHTML = '';
-  GROUPS.forEach(g => {
-    const card = document.createElement('div');
-    card.className = 'bundle-card' + (selectedGroup === g.id ? ' selected' : '');
-    const groupItems = ITEMS.filter(i => i.group === g.id);
-    const ds = tlDateStr();
-    const statusPills = groupItems.map(item => {
-      const bks = getBookingsForItemDay(item.id, ds);
-      const cls = bks.length === 0 ? 'free' : 'busy';
-      return `<span class="status-pill ${cls}">${item.type}: ${bks.length === 0 ? 'Free' : 'Booked'}</span>`;
-    }).join('<span style="color:var(--border);margin:0 4px;">|</span>');
-    card.innerHTML = `<div class="bundle-name">🎸 ${g.label}</div><div class="bundle-desc">${g.desc}</div><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">${statusPills}</div>`;
-    card.onclick = () => selectGroup(g.id);
-    sel.appendChild(card);
-  });
-  if (selectedGroup) { renderItemToggles(); }
-}
-
-function selectGroup(gid) {
-  selectedGroup = gid;
-  const bundleItem = ITEMS.find(i => i.group === gid && i.required);
-  selectedItemIds = [bundleItem.id];
-  // Unlock steps 2-4
-  ['step2-card','step3-card','step4-card'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) { el.style.opacity = '1'; el.style.pointerEvents = 'auto'; }
-  });
-  const sub = document.getElementById('step2-sub');
-  if (sub) sub.textContent = '';
-  renderGroupSelector(); tlRender(); checkConflict();
-}
-
-// ── ITEM TOGGLES ──
-function renderItemToggles() {
-  const grid = document.getElementById('toggle-grid'); grid.innerHTML = '';
-  const groupItems = ITEMS.filter(i => i.group === selectedGroup);
-  const ds = tlDateStr(), nd = tlNextDateStr();
-  const sMin = stepToMin(tlStartStep), eMin = stepToMin(tlEndStep);
-  groupItems.forEach(item => {
-    const isActive = selectedItemIds.includes(item.id);
-    const isRequired = item.required;
-    const hasConflict = getBookingsFor48h(item.id).some(b => {
-      const range = bookingToAbsRange(b, ds, nd); if (!range) return false;
-      return !(range[1] <= sMin || range[0] >= eMin);
-    });
-    const el = document.createElement('div');
-    el.className = 'item-toggle' + (isActive ? ' active' : '') + (hasConflict && !isRequired ? ' unavailable' : '');
-    el.innerHTML = `<div class="toggle-check">${isActive ? '✓' : ''}</div><div class="toggle-info"><div class="toggle-name">${item.icon} ${item.name}</div><div class="toggle-tag">${item.type}${hasConflict ? ' · <span style="color:var(--danger)">CONFLICT</span>' : ''}</div></div><span class="${isRequired ? 'toggle-badge req' : 'toggle-badge opt'}">${isRequired ? 'REQUIRED' : 'OPTIONAL'}</span>`;
-    if (!isRequired) {
-      el.onclick = () => {
-        if (hasConflict) return;
-        selectedItemIds = selectedItemIds.includes(item.id) ? selectedItemIds.filter(id => id !== item.id) : [...selectedItemIds, item.id];
-        renderItemToggles(); tlRender(); checkConflict();
-      };
-    }
-    grid.appendChild(el);
-  });
-}
-
-// ── CONFLICT CHECK ──
-function checkConflict() {
-  const warn = document.getElementById('conflict-warn');
-  if (!selectedGroup || selectedItemIds.length === 0) { warn.classList.remove('visible'); warn.textContent = ''; return; }
-  const ds = tlDateStr(), nd = tlNextDateStr();
-  const sMin = stepToMin(tlStartStep), eMin = stepToMin(tlEndStep);
-  const conflicting = selectedItemIds.filter(id => getBookingsFor48h(id).some(b => {
-    const range = bookingToAbsRange(b, ds, nd); if (!range) return false;
-    return !(range[1] <= sMin || range[0] >= eMin);
-  }));
-  if (conflicting.length > 0) {
-    warn.textContent = `⚠ Conflict: ${conflicting.map(id => ITEMS.find(i=>i.id===id)?.name).join(', ')} already booked during this window.`;
-    warn.classList.add('visible');
-  } else { warn.classList.remove('visible'); warn.textContent = ''; }
-}
-
-// ── SIDEBAR ──
-function renderSidebar() {
-  const el = document.getElementById('booking-list-sidebar');
-  if (bookings.length === 0) { el.innerHTML = `<div class="empty-state">No reservations yet.<br>Create your first checkout above.</div>`; return; }
-  const sorted = [...bookings].sort((a,b) => a.date < b.date ? -1 : 1);
-  el.innerHTML = sorted.map(b => `<div class="res-item"><button class="del-btn" onclick="deleteBooking('${b.id}')" title="Remove">✕</button><span class="res-badge">ACTIVE</span><div class="res-name">${escHtml(b.itemLabels)}</div><div class="res-meta">${escHtml(b.name)}<br>ID: ${escHtml(b.sid)}<br>${b.date} · ${timeStr12(b.startTime)}–${timeStr12(b.endTime)}</div></div>`).join('');
-}
-function deleteBooking(id) { deleteBookingFromSheets(id); }
-
-// ── SUBMIT ──
-async function handleSubmit() {
-  const name  = document.getElementById('f-name').value.trim();
-  const email = document.getElementById('f-email').value.trim();
-  const phone = document.getElementById('f-phone').value.trim();
-  const sid   = document.getElementById('f-sid').value.trim();
-  const date  = document.getElementById('f-date').value;
-  const start = document.getElementById('f-start').value;
-  const end   = document.getElementById('f-end').value;
-  if (!selectedGroup)           return showToast('Please select a bundle.', 'error');
-  if (selectedItemIds.length === 0) return showToast('Please select at least one item.', 'error');
-  if (!name)  return showToast('Please enter your name.', 'error');
-  if (!email) return showToast('Please enter your email address.', 'error');
-  if (!phone) return showToast('Please enter your phone number.', 'error');
-  if (!sid)   return showToast('Please enter your Student ID.', 'error');
-  const sMin = stepToMin(tlStartStep), eMin = stepToMin(tlEndStep);
-  const diffMin = eMin - sMin;
-  if (diffMin > 1425) return showToast('Checkout cannot exceed 23h 45m.', 'error');
-  if (diffMin < 15)   return showToast('Please select at least a 15-minute window.', 'error');
-  const conflictingIds = selectedItemIds.filter(id => getBookingsFor48h(id).some(b => {
-    const range = bookingToAbsRange(b, date, tlNextDateStr()); if (!range) return false;
-    return !(range[1] <= sMin || range[0] >= eMin);
-  }));
-  if (conflictingIds.length > 0) return showToast('Time conflict! Adjust the slider or choose different items.', 'error');
-  const itemLabels = selectedItemIds.map(id => ITEMS.find(i=>i.id===id)?.name).join(' + ');
-  const booking = { id: genId(), group: selectedGroup, itemIds: [...selectedItemIds], itemLabels, name, email, phone, sid, date, startTime: start, endTime: end };
-  bookings.push(booking); refreshAllViews();
-  const btn = document.getElementById('submit-btn'); btn.disabled = true; btn.textContent = 'Saving…';
-  await saveBookingToSheets(booking);
-  btn.disabled = false; btn.textContent = 'Create Reservation';
-  showModal(booking, buildGCalUrl(booking), buildMailto(booking));
-  document.getElementById('f-name').value = '';
-  document.getElementById('f-email').value = '';
-  document.getElementById('f-phone').value = '';
-  document.getElementById('f-sid').value = '';
-  selectedGroup = null; selectedItemIds = [];
-  renderGroupSelector(); tlRender();
-}
-
-// ── GCAL ──
-function buildGCalUrl(b) {
-  const dp = b.date.split('-'), [sh,sm] = b.startTime.split(':'), [eh,em] = b.endTime.split(':');
-  const startDt = `${dp[0]}${dp[1]}${dp[2]}T${sh}${sm}00`;
-  let endDate = b.date;
-  if (timeToMin(b.endTime) <= timeToMin(b.startTime)) { const d = new Date(b.date+'T00:00:00'); d.setDate(d.getDate()+1); endDate = dateStr(d); }
-  const edp = endDate.split('-');
-  const endDt = `${edp[0]}${edp[1]}${edp[2]}T${eh}${em}00`;
-  const title   = encodeURIComponent(`IRPM Checkout — ${b.itemLabels} — ${b.name}`);
-  const details = encodeURIComponent(`IRPM Equipment Checkout Reservation\n\nItems: ${b.itemLabels}\nName: ${b.name}\nStudent ID: ${b.sid}\n\nThis item must be returned by the scheduled end time.\nQuestions? Contact studiooperations@berklee.edu`);
-  const guests  = encodeURIComponent(`${b.email},scheduleviewer@berklee.edu`);
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startDt}/${endDt}&details=${details}&add=${guests}`;
-}
-
-// ── MAILTO ──
-function buildMailto(b) {
-  const subject = encodeURIComponent(`[IRPM Checkout] ${b.itemLabels} — ${b.name} — ${b.date}`);
-  const body    = encodeURIComponent(`IRPM Equipment Checkout Confirmation\n${'='.repeat(40)}\n\nItems: ${b.itemLabels}\nName: ${b.name}\nEmail: ${b.email}\nPhone: ${b.phone}\nStudent ID: ${b.sid}\n\nDate: ${b.date}\nTime: ${b.startTime} – ${b.endTime}\n\n${'─'.repeat(40)}\nThis confirmation was generated by the IRPM Checkout system.\nPlease ensure items are returned by the scheduled end time.`);
-  return `mailto:studiooperations@berklee.edu?subject=${subject}&body=${body}`;
-}
-
-// ── MODAL ──
-function showModal(b, gcalUrl, mailtoUrl) {
-  document.getElementById('modal-body').innerHTML = `<strong>${escHtml(b.itemLabels)}</strong> reserved for <strong>${escHtml(b.name)}</strong>.<br><br>📅 ${b.date} &nbsp;&middot;&nbsp; ⏱ ${timeStr12(b.startTime)}–${timeStr12(b.endTime)}<br>🎓 ID: ${escHtml(b.sid)}<br>📧 ${escHtml(b.email)}<br><div class="hint">◈ Clicking Confirm will open your email client and add the event to Google Calendar.<br>◈ Questions? Contact studiooperations@berklee.edu</div><a id="gcal-link-hidden" href="${gcalUrl}" style="display:none"></a><a id="email-link-hidden" href="${mailtoUrl}" style="display:none"></a>`;
+function showSuccessModal(b) {
+  document.getElementById('modal-text').innerHTML = `
+    Your reservation for <b>${escHtml(b.group)}</b> is confirmed.<br><br>
+    📅 ${new Date(b.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}<br>
+    ⏰ ${formatTimeStr(b.startTime)} - ${formatTimeStr(b.endTime)}<br>
+    📧 ${escHtml(b.email)}
+    <div class="hint">✅ A Google Calendar invite has been sent automatically to ${escHtml(b.email)} and studiooperations@berklee.edu.</div>`;
   document.getElementById('modal').classList.add('open');
 }
-function confirmReservation() {
-  const btn = document.getElementById('confirm-btn');
-  // Open both URLs
-  const gcalHref = document.getElementById('gcal-link-hidden')?.href;
-  const emailHref = document.getElementById('email-link-hidden')?.href;
-  if (gcalHref && gcalHref !== '#') window.open(gcalHref, '_blank');
-  if (emailHref && emailHref !== '#') window.open(emailHref, '_blank');
-  // Mark as confirmed
-  btn.innerHTML = '✓ Sent!';
-  btn.classList.add('done');
-  btn.dataset.confirmed = '1';
-  setTimeout(() => closeModal(), 1200);
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+// ── UTILS ─────────────────────────────────────────────────────────────────
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showToast(msg,type='success') {
+  const t=document.getElementById('toast'); t.textContent=msg;
+  t.className='toast '+type; void t.offsetWidth; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),3200);
 }
 
-function closeModal() {
-  const btn = document.getElementById('confirm-btn');
-  if (btn && !btn.dataset.confirmed) {
-    if (!confirm('Send the confirmation email and calendar invite before closing. Close anyway?')) return;
-  }
-  document.getElementById('modal').classList.remove('open');
-  // Reset button for next time
-  if (btn) {
-    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Confirm &amp; Send';
-    btn.style.background = '';
-    btn.style.border = '';
-    btn.style.color = '';
-    delete btn.dataset.confirmed;
-  }
-}
+// ── INIT ──────────────────────────────────────────────────────────────────
+// Expose isStaff for renderSidebar/renderSchedule
+Object.defineProperty(window,'_isStaff',{get:()=>typeof isStaff!=='undefined'?isStaff:false,configurable:true});
 
-// ── UTILS ──
-function genId() { return Math.random().toString(36).slice(2,10); }
-function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function showToast(msg, type='success') {
-  const t = document.getElementById('toast'); t.textContent = msg;
-  t.className = 'toast ' + type; void t.offsetWidth; t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3200);
-}
-
-// ── INIT ──
-tlDate = new Date(); tlDate.setHours(0,0,0,0);
+tlDate=new Date(); tlDate.setHours(0,0,0,0);
+renderBundlePicker();
 tlInitSliders(); syncHiddenInputs(); tlRender();
-tlInitSliders(); syncHiddenInputs(); tlRender();
-renderSchedule(); renderGroupSelector(); renderSidebar();
-fetchBookingsFromSheets();
-fetchBookingsFromSheets();
-
-
+renderSchedule();
+// Pre-fill name/email from Google account when signed in
+document.getElementById('f-name').addEventListener('focus',()=>{
+  if(!document.getElementById('f-name').value && currentUser) {
+    document.getElementById('f-name').value  = currentUser.user_metadata?.full_name || currentUser.displayName || '';
+    document.getElementById('f-email').value = currentUser.email;
+    checkValid();
+  }
+});
 </script>
-
 </body>
 </html>
