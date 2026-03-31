@@ -220,7 +220,7 @@
     <div class="sign-in-title">IRPM Equipment Checkout</div>
     <div class="sign-in-sub">Sign in with your Berklee Google account to reserve equipment.</div>
     <button id="btn-login" class="btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:15px;" onclick="window.doSignIn()">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px;vertical-align:-3px;"><path d="M22 12c0-.8-.1-1.5-.2-2H12v4h5.6c-.2 1.2-.9 2.2-2 2.9v2.4h3.3c1.9-1.8 3.1-4.4 3.1-7.3z"/><path d="M12 22c2.8 0 5.2-.9 7-2.5l-3.3-2.4c-.9.6-2.1 1-3.6 1-2.8 0-5.2-1.9-6-4.5H2.7v2.5C4.5 19.7 7.9 22 12 22z"/><path d="M6 13.6c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V7.1H2.7C2.2 8.3 2 9.6 2 11s.2 2.7.7 3.9l3.3-1.3z"/><path d="M12 6c1.5 0 2.9.5 4 1.5l3-3C17.2 2.6 14.8 1.5 12 1.5 7.9 1.5 4.5 3.8 2.7 7.1l3.3 2.5c.8-2.6 3.2-4.5 6-4.5z"/></svg>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px;vertical-align:-3px;"><path d="M22 12c0-.8-.1-1.5-.2-2H12v4h5.6c-.2 1.2-.9 2.2-2 2.9v2.4h3.3c1.9-1.8 3.1-4.4 3.1-7.3z"/><path d="M12 22c2.8 0 5.2-.9 7-2.5l-3.3-2.4c-.9.6-2.1 1-3.6 1-2.8 0-5.2-1.9-6-4.5H2.7v2.5C4.5 19.7 7.9 22 12 22z"/><path d="M6 13.6c-.2-.6-.3-1.3-.3-2V7.1H2.7C2.2 8.3 2 9.6 2 11s.2 2.7.7 3.9l3.3-1.3z"/><path d="M12 6c1.5 0 2.9.5 4 1.5l3-3C17.2 2.6 14.8 1.5 12 1.5 7.9 1.5 4.5 3.8 2.7 7.1l3.3 2.5c.8-2.6 3.2-4.5 6-4.5z"/></svg>
       Sign in with Google
     </button>
   </div>
@@ -387,21 +387,36 @@ const sb = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 let currentUser = null, isStaff = false;
 
-// Staff emails — add Berklee addresses here as needed
-const STAFF_EMAILS = ['bdimaio@berklee.edu', 'studiooperations@berklee.edu'];
-
 sb.auth.onAuthStateChange(async (event, session) => {
   if (session?.user) {
     const email = session.user.email || '';
-    if (!email.endsWith('@berklee.edu')) { showToast('Only @berklee.edu accounts are allowed.','error'); await sb.auth.signOut(); return; }
+    if (!email.endsWith('@berklee.edu')) {
+      showToast('Only @berklee.edu accounts are allowed.', 'error');
+      await sb.auth.signOut();
+      return;
+    }
     currentUser = session.user;
-    isStaff = STAFF_EMAILS.includes(email);
+
+    // ── STAFF CHECK: look up email in the staff contact sheet ──────────────
+    try {
+      const res = await fetch(`${APPS_SCRIPT_URL}?action=checkstaff&email=${encodeURIComponent(email)}`);
+      const data = await res.json();
+      isStaff = data.isStaff === true;
+    } catch(_) {
+      isStaff = false;
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
     onSignedIn();
-  } else { currentUser = null; isStaff = false; onSignedOut(); }
+  } else {
+    currentUser = null;
+    isStaff = false;
+    onSignedOut();
+  }
 });
 
 function onSignedIn() {
-  document.getElementById('auth-bar').innerHTML = `<span class="auth-email">${currentUser.email}</span>${isStaff?'<span class="staff-badge">STAFF</span>':''}<button class="btn-ghost" onclick="window.doSignOut()">Sign out</button>`;
+  document.getElementById('auth-bar').innerHTML = `<span class="auth-email">${currentUser.email}</span>${isStaff ? '<span class="staff-badge">STAFF</span>' : ''}<button class="btn-ghost" onclick="window.doSignOut()">Sign out</button>`;
   document.getElementById('sign-in-wall').style.display = 'none';
   document.getElementById('app-main').style.display = 'block';
   if (isStaff) document.getElementById('staff-panel').style.display = 'block';
@@ -415,14 +430,14 @@ function onSignedOut() {
   document.getElementById('app-main').style.display = 'none';
   document.getElementById('sign-in-wall').style.display = 'flex';
   document.getElementById('staff-panel').style.display = 'none';
-  bookings = []; if (typeof refreshAllViews==='function') refreshAllViews();
+  bookings = []; if (typeof refreshAllViews === 'function') refreshAllViews();
 }
 window.doSignIn = async () => {
   try {
     const btn = document.getElementById('btn-login'); if (btn) btn.innerHTML = 'Connecting...';
-    const { error } = await sb.auth.signInWithOAuth({ provider:'google', options:{ queryParams:{hd:'berklee.edu'}, redirectTo:window.location.href } });
-    if (error) { console.error('Auth error:',error); alert('Login Error: '+error.message); if (btn) btn.innerHTML = 'Sign in with Google'; }
-  } catch(err) { console.error('Catch error:',err); alert('Unexpected error: '+err.message); }
+    const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { queryParams: { hd: 'berklee.edu' }, redirectTo: window.location.href } });
+    if (error) { console.error('Auth error:', error); alert('Login Error: ' + error.message); if (btn) btn.innerHTML = 'Sign in with Google'; }
+  } catch(err) { console.error('Catch error:', err); alert('Unexpected error: ' + err.message); }
 };
 window.doSignOut = async () => { await sb.auth.signOut(); };
 
@@ -431,7 +446,6 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwpFPALtw4cMf54
 
 function subscribeBookings() {
   fetchBookings();
-  // Poll every 30s for updates from other users
   setInterval(fetchBookings, 30000);
 }
 
@@ -443,9 +457,7 @@ async function fetchBookings() {
     if (data.status === 'ok') {
       bookings = data.bookings.map(b => ({
         ...b,
-        // Sheets may return dates as "Mon Apr 01 2026 00:00:00 GMT..." — normalize to YYYY-MM-DD
         date: normalizeDate(b.date),
-        // Ensure arrays are actually arrays (Apps Script JSON.parse should handle this, but be safe)
         itemIds:    Array.isArray(b.itemIds)    ? b.itemIds    : JSON.parse(b.itemIds    || '[]'),
         itemLabels: Array.isArray(b.itemLabels) ? b.itemLabels : JSON.parse(b.itemLabels || '[]'),
       }));
@@ -460,9 +472,7 @@ async function fetchBookings() {
 
 function normalizeDate(val) {
   if (!val) return '';
-  // Already YYYY-MM-DD
   if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
-  // Try parsing as date and re-formatting
   const d = new Date(val);
   if (!isNaN(d)) {
     const tz = d.getTimezoneOffset() * 60000;
@@ -498,86 +508,86 @@ window.deleteBookingFromServer = async (bookingId) => {
 };
 
 window.exportToCSV = () => {
-  const header = ['ID','Items','Date','Start','End','Name','Email','Phone','StudentID','Created'];
-  const rows = bookings.map(b => [b.id,(b.itemLabels||[]).join(' + '),b.date,b.startTime,b.endTime,b.name,b.email,b.phone||'',b.sid||'',b.createdAt]);
-  const csv = [header,...rows].map(e=>e.map(String).map(v=>v.replaceAll('"','""')).map(v=>`"${v}"`).join(',')).join('\n');
+  const header = ['ID', 'Items', 'Date', 'Start', 'End', 'Name', 'Email', 'Phone', 'StudentID', 'Created'];
+  const rows = bookings.map(b => [b.id, (b.itemLabels || []).join(' + '), b.date, b.startTime, b.endTime, b.name, b.email, b.phone || '', b.sid || '', b.createdAt]);
+  const csv = [header, ...rows].map(e => e.map(String).map(v => v.replaceAll('"', '""')).map(v => `"${v}"`).join(',')).join('\n');
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
   a.download = `irpm-bookings-${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
 };
 
 // ── DATA ───────────────────────────────────────────────────────────────────
 const BUNDLES = [
-  { id:'b1', name:'IRPM Bundle 1', desc:'Primary recording rig', items:['irpm_bundle_1'], optional:['stand_bag_1'] },
-  { id:'b2', name:'IRPM Bundle 2', desc:'Primary recording rig', items:['irpm_bundle_2'], optional:['stand_bag_2'] }
+  { id: 'b1', name: 'IRPM Bundle 1', desc: 'Primary recording rig', items: ['irpm_bundle_1'], optional: ['stand_bag_1'] },
+  { id: 'b2', name: 'IRPM Bundle 2', desc: 'Primary recording rig', items: ['irpm_bundle_2'], optional: ['stand_bag_2'] }
 ];
-const ITEMS = { 'irpm_bundle_1':{label:'IRPM Bundle 1'}, 'stand_bag_1':{label:'Stand Bag 1'}, 'irpm_bundle_2':{label:'IRPM Bundle 2'}, 'stand_bag_2':{label:'Stand Bag 2'} };
+const ITEMS = { 'irpm_bundle_1': { label: 'IRPM Bundle 1' }, 'stand_bag_1': { label: 'Stand Bag 1' }, 'irpm_bundle_2': { label: 'IRPM Bundle 2' }, 'stand_bag_2': { label: 'Stand Bag 2' } };
 
-let bookings=[], weekOffset=0, selBundleId=null, selOptItems=[];
+let bookings = [], weekOffset = 0, selBundleId = null, selOptItems = [];
 
 // ── TIMELINE STATE ─────────────────────────────────────────────────────────
-let tlDate = new Date(); tlDate.setHours(0,0,0,0);
-const TL_STEPS=192, TL_MINS=48*60;
-let tlStartStep=36, tlEndStep=44; // default 10am–12pm
+let tlDate = new Date(); tlDate.setHours(0, 0, 0);
+const TL_STEPS = 192, TL_MINS = 48 * 60;
+let tlStartStep = 36, tlEndStep = 44;
 
-function stepToMin(s){ return s*15; }
-function toISODate(d){ const tz=d.getTimezoneOffset()*60000; return new Date(d-tz).toISOString().split('T')[0]; }
-function tlDateStr(){ return toISODate(tlDate); }
-function tlNextDateStr(){ const d=new Date(tlDate); d.setDate(d.getDate()+1); return toISODate(d); }
-function timeToMins(t){ const [h,m]=t.split(':'); return parseInt(h)*60+parseInt(m); }
-function minsToTime(m){ const h=Math.floor(m/60),mm=m%60; return `${h.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`; }
+function stepToMin(s) { return s * 15; }
+function toISODate(d) { const tz = d.getTimezoneOffset() * 60000; return new Date(d - tz).toISOString().split('T')[0]; }
+function tlDateStr() { return toISODate(tlDate); }
+function tlNextDateStr() { const d = new Date(tlDate); d.setDate(d.getDate() + 1); return toISODate(d); }
+function timeToMins(t) { const [h, m] = t.split(':'); return parseInt(h) * 60 + parseInt(m); }
+function minsToTime(m) { const h = Math.floor(m / 60), mm = m % 60; return `${h.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}`; }
 
 // ── UI ─────────────────────────────────────────────────────────────────────
-function switchView(v,e){
-  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
-  document.getElementById('view-'+v).classList.add('active');
-  document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
-  if(e&&e.currentTarget) e.currentTarget.classList.add('active');
-  else document.getElementById('nav-'+v)?.classList.add('active');
-  if(v==='schedule') renderSchedule();
-  if(v==='checkout'){ renderBundlePicker(); tlRender(); updateMyBookings(); }
+function switchView(v, e) {
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.getElementById('view-' + v).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+  if (e && e.currentTarget) e.currentTarget.classList.add('active');
+  else document.getElementById('nav-' + v)?.classList.add('active');
+  if (v === 'schedule') renderSchedule();
+  if (v === 'checkout') { renderBundlePicker(); tlRender(); updateMyBookings(); }
 }
-function setSyncState(isSyncing,status){
-  const p=document.getElementById('sync-status'); if(!p) return;
-  if(isSyncing){ p.className='sync-pill syncing'; p.innerHTML='<div class="sync-dot"></div> Syncing...'; }
-  else{ p.className='sync-pill '+(status==='error'?'error':'idle'); p.innerHTML=`<div class="sync-dot"></div> ${status==='error'?'Offline':'Live'}`; }
+function setSyncState(isSyncing, status) {
+  const p = document.getElementById('sync-status'); if (!p) return;
+  if (isSyncing) { p.className = 'sync-pill syncing'; p.innerHTML = '<div class="sync-dot"></div> Syncing...'; }
+  else { p.className = 'sync-pill ' + (status === 'error' ? 'error' : 'idle'); p.innerHTML = `<div class="sync-dot"></div> ${status === 'error' ? 'Offline' : 'Live'}`; }
 }
-function refreshAllViews(){ renderSchedule(); renderBundlePicker(); tlRender(); updateMyBookings(); }
+function refreshAllViews() { renderSchedule(); renderBundlePicker(); tlRender(); updateMyBookings(); }
 
 // ── SCHEDULE ───────────────────────────────────────────────────────────────
-function getStartOfWeek(d){ const c=new Date(d),day=c.getDay(),diff=c.getDate()-day+(day===0?-6:1); c.setDate(diff); c.setHours(0,0,0,0); return c; }
-function addDays(d,n){ const c=new Date(d); c.setDate(c.getDate()+n); return c; }
+function getStartOfWeek(d) { const c = new Date(d), day = c.getDay(), diff = c.getDate() - day + (day === 0 ? -6 : 1); c.setDate(diff); c.setHours(0, 0, 0, 0); return c; }
+function addDays(d, n) { const c = new Date(d); c.setDate(c.getDate() + n); return c; }
 
-function renderSchedule(){
-  const base=new Date(), mon=addDays(getStartOfWeek(base),weekOffset*7);
-  document.getElementById('week-label').textContent=`${mon.toLocaleDateString('en-US',{month:'short',day:'numeric'})} - ${addDays(mon,6).toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
-  const hd=document.getElementById('sched-hd'); hd.innerHTML='';
-  hd.appendChild(Object.assign(document.createElement('div'),{className:'sched-hd-cell',textContent:'Equipment'}));
-  const days=[]; const todayISO=toISODate(base);
-  for(let i=0;i<7;i++){
-    const d=addDays(mon,i); days.push(toISODate(d));
-    const cell=document.createElement('div');
-    cell.className='sched-hd-cell'+(toISODate(d)===todayISO?' today':'');
-    cell.innerHTML=`${d.toLocaleDateString('en-US',{weekday:'short'})}<br><span style="font-size:12px;color:var(--text);">${d.getDate()}</span>`;
+function renderSchedule() {
+  const base = new Date(), mon = addDays(getStartOfWeek(base), weekOffset * 7);
+  document.getElementById('week-label').textContent = `${mon.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${addDays(mon, 6).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  const hd = document.getElementById('sched-hd'); hd.innerHTML = '';
+  hd.appendChild(Object.assign(document.createElement('div'), { className: 'sched-hd-cell', textContent: 'Equipment' }));
+  const days = []; const todayISO = toISODate(base);
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(mon, i); days.push(toISODate(d));
+    const cell = document.createElement('div');
+    cell.className = 'sched-hd-cell' + (toISODate(d) === todayISO ? ' today' : '');
+    cell.innerHTML = `${d.toLocaleDateString('en-US', { weekday: 'short' })}<br><span style="font-size:12px;color:var(--text);">${d.getDate()}</span>`;
     hd.appendChild(cell);
   }
-  const bdy=document.getElementById('sched-body'); bdy.innerHTML='';
-  BUNDLES.forEach(b=>{
-    const pdiv=document.createElement('div'); pdiv.className='pair-divider'; pdiv.textContent=b.name; bdy.appendChild(pdiv);
-    [...b.items,...(b.optional||[])].forEach(itemId=>{
-      const row=document.createElement('div'); row.className='item-row';
-      row.innerHTML=`<div class="item-label"><div class="item-name">${ITEMS[itemId].label}</div><div class="item-type">${b.name}</div></div>`;
-      days.forEach(dateStr=>{
-        const cell=document.createElement('div'); cell.className='day-cell'+(dateStr===todayISO?' today':'');
-        bookings.filter(bk=>{
-          if(!bk.itemIds.includes(itemId)) return false;
-          const dayDiff=Math.round((new Date(dateStr+'T00:00:00')-new Date(bk.date+'T00:00:00'))/86400000);
-          return dayDiff>=0 && dayDiff<=Math.floor((timeToMins(bk.endTime)-1)/(24*60));
-        }).forEach(bk=>{
-          const blk=document.createElement('div'); blk.className='booking-block';
-          blk.innerHTML=`<div class="bk-name">${escHtml(bk.name.split(' ')[0])}</div><div class="bk-time">${formatTimeStr(bk.startTime)} - ${formatTimeStr(bk.endTime)}</div>`;
-          if(window._isStaff) blk.innerHTML+=`<div class="bk-staff-info">${escHtml(bk.name)} (${escHtml(bk.email)})<br>Phone: ${escHtml(bk.phone||'--')}<br>ID: ${escHtml(bk.sid||'--')}<br>Booked: ${new Date(bk.createdAt).toLocaleDateString()}<br><br><button class="btn-danger" style="width:100%" onclick="event.stopPropagation();window.deleteBookingFromServer('${bk.id}')">Cancel Booking</button></div>`;
+  const bdy = document.getElementById('sched-body'); bdy.innerHTML = '';
+  BUNDLES.forEach(b => {
+    const pdiv = document.createElement('div'); pdiv.className = 'pair-divider'; pdiv.textContent = b.name; bdy.appendChild(pdiv);
+    [...b.items, ...(b.optional || [])].forEach(itemId => {
+      const row = document.createElement('div'); row.className = 'item-row';
+      row.innerHTML = `<div class="item-label"><div class="item-name">${ITEMS[itemId].label}</div><div class="item-type">${b.name}</div></div>`;
+      days.forEach(dateStr => {
+        const cell = document.createElement('div'); cell.className = 'day-cell' + (dateStr === todayISO ? ' today' : '');
+        bookings.filter(bk => {
+          if (!bk.itemIds.includes(itemId)) return false;
+          const dayDiff = Math.round((new Date(dateStr + 'T00:00:00') - new Date(bk.date + 'T00:00:00')) / 86400000);
+          return dayDiff >= 0 && dayDiff <= Math.floor((timeToMins(bk.endTime) - 1) / (24 * 60));
+        }).forEach(bk => {
+          const blk = document.createElement('div'); blk.className = 'booking-block';
+          blk.innerHTML = `<div class="bk-name">${escHtml(bk.name.split(' ')[0])}</div><div class="bk-time">${formatTimeStr(bk.startTime)} - ${formatTimeStr(bk.endTime)}</div>`;
+          if (window._isStaff) blk.innerHTML += `<div class="bk-staff-info">${escHtml(bk.name)} (${escHtml(bk.email)})<br>Phone: ${escHtml(bk.phone || '--')}<br>ID: ${escHtml(bk.sid || '--')}<br>Booked: ${new Date(bk.createdAt).toLocaleDateString()}<br><br><button class="btn-danger" style="width:100%" onclick="event.stopPropagation();window.deleteBookingFromServer('${bk.id}')">Cancel Booking</button></div>`;
           cell.appendChild(blk);
         });
         row.appendChild(cell);
@@ -586,228 +596,221 @@ function renderSchedule(){
     });
   });
 }
-function formatTimeStr(t24){
-  let [h,m]=t24.split(':'); h=parseInt(h,10);
-  const days=Math.floor(h/24),hour24=h%24,ampm=hour24>=12?'PM':'AM',hour12=hour24%12||12;
-  return `${hour12}:${m} ${ampm}${days>0?` (+${days}d)`:''}`;
+function formatTimeStr(t24) {
+  let [h, m] = t24.split(':'); h = parseInt(h, 10);
+  const days = Math.floor(h / 24), hour24 = h % 24, ampm = hour24 >= 12 ? 'PM' : 'AM', hour12 = hour24 % 12 || 12;
+  return `${hour12}:${m} ${ampm}${days > 0 ? ` (+${days}d)` : ''}`;
 }
 
 // ── BUNDLE PICKER ──────────────────────────────────────────────────────────
-function renderBundlePicker(){
-  const wrap=document.getElementById('bundle-list'); wrap.innerHTML='';
-  BUNDLES.forEach(b=>{
-    const isSel=(selBundleId===b.id);
-    const card=document.createElement('div'); card.className='bundle-card'+(isSel?' selected':'');
-    card.onclick=(e)=>{ if(e.target.closest('.item-toggle')) return; if(!isSel){ selBundleId=b.id; selOptItems=[]; renderBundlePicker(); unlockSteps(); tlRender(); checkValid(); } };
-    let optHtml='';
-    if(isSel&&b.optional&&b.optional.length>0){
-      optHtml='<div class="toggle-list" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">';
-      b.optional.forEach(optId=>{
-        const isActive=selOptItems.includes(optId);
-        optHtml+=`<div class="item-toggle${isActive?' active':''}" onclick="toggleOpt('${optId}')"><div class="toggle-check">${isActive?'✓':''}</div><div class="toggle-info"><div class="toggle-name">${ITEMS[optId].label}</div><div class="toggle-tag">OPTIONAL ADD-ON</div></div><div class="toggle-badge opt">OPTIONAL</div></div>`;
+function renderBundlePicker() {
+  const wrap = document.getElementById('bundle-list'); wrap.innerHTML = '';
+  BUNDLES.forEach(b => {
+    const isSel = (selBundleId === b.id);
+    const card = document.createElement('div'); card.className = 'bundle-card' + (isSel ? ' selected' : '');
+    card.onclick = (e) => { if (e.target.closest('.item-toggle')) return; if (!isSel) { selBundleId = b.id; selOptItems = []; renderBundlePicker(); unlockSteps(); tlRender(); checkValid(); } };
+    let optHtml = '';
+    if (isSel && b.optional && b.optional.length > 0) {
+      optHtml = '<div class="toggle-list" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">';
+      b.optional.forEach(optId => {
+        const isActive = selOptItems.includes(optId);
+        optHtml += `<div class="item-toggle${isActive ? ' active' : ''}" onclick="toggleOpt('${optId}')"><div class="toggle-check">${isActive ? '✓' : ''}</div><div class="toggle-info"><div class="toggle-name">${ITEMS[optId].label}</div><div class="toggle-tag">OPTIONAL ADD-ON</div></div><div class="toggle-badge opt">OPTIONAL</div></div>`;
       });
-      optHtml+='</div>';
+      optHtml += '</div>';
     }
-    card.innerHTML=`<div class="bundle-name">${b.name}</div><div class="bundle-desc">${b.desc}</div><div class="bundle-status" style="margin-bottom:${isSel?'0':'0'}"><span class="status-pill free">REQUIRED</span></div>${optHtml}`;
+    card.innerHTML = `<div class="bundle-name">${b.name}</div><div class="bundle-desc">${b.desc}</div><div class="bundle-status" style="margin-bottom:${isSel ? '0' : '0'}"><span class="status-pill free">REQUIRED</span></div>${optHtml}`;
     wrap.appendChild(card);
   });
-  const bObj=BUNDLES.find(x=>x.id===selBundleId);
-  if(bObj){ let names=[bObj.name]; selOptItems.forEach(id=>names.push(ITEMS[id].label)); document.getElementById('sum-bundle').textContent=names.join(' + '); }
-  else document.getElementById('sum-bundle').textContent='-';
-  document.getElementById('s1-num').className='step-num'+(bObj?' done':'');
+  const bObj = BUNDLES.find(x => x.id === selBundleId);
+  if (bObj) { let names = [bObj.name]; selOptItems.forEach(id => names.push(ITEMS[id].label)); document.getElementById('sum-bundle').textContent = names.join(' + '); }
+  else document.getElementById('sum-bundle').textContent = '-';
+  document.getElementById('s1-num').className = 'step-num' + (bObj ? ' done' : '');
 }
 
-window.toggleOpt=(optId)=>{
-  selOptItems=selOptItems.includes(optId)?selOptItems.filter(id=>id!==optId):[...selOptItems,optId];
+window.toggleOpt = (optId) => {
+  selOptItems = selOptItems.includes(optId) ? selOptItems.filter(id => id !== optId) : [...selOptItems, optId];
   renderBundlePicker(); tlRender(); checkValid();
 };
 
-function unlockSteps(){
-  ['step3-card','step4-card'].forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.remove('locked'); });
+function unlockSteps() {
+  ['step3-card', 'step4-card'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('locked'); });
 }
 
 // ── TIMELINE RENDER ────────────────────────────────────────────────────────
-function tlChangeDate(dir){ tlDate.setDate(tlDate.getDate()+dir); tlRender(); checkValid(); }
+function tlChangeDate(dir) { tlDate.setDate(tlDate.getDate() + dir); tlRender(); checkValid(); }
 
-function minToTime12(m){
-  const totalMins=m%1440,h=Math.floor(totalMins/60),mins=totalMins%60;
-  const period=h<12?'am':'pm',h12=h%12===0?12:h%12;
-  return mins===0?`${h12}${period}`:`${h12}:${String(mins).padStart(2,'0')}${period}`;
+function minToTime12(m) {
+  const totalMins = m % 1440, h = Math.floor(totalMins / 60), mins = totalMins % 60;
+  const period = h < 12 ? 'am' : 'pm', h12 = h % 12 === 0 ? 12 : h % 12;
+  return mins === 0 ? `${h12}${period}` : `${h12}:${String(mins).padStart(2, '0')}${period}`;
 }
-function fmtShort(d){ return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function fmtShort(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 
-function tlRender(){
-  const ds=tlDateStr(),nd=tlNextDateStr();
-  const nextDate=new Date(tlDate); nextDate.setDate(tlDate.getDate()+1);
-  document.getElementById('tl-date-label').textContent=tlDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+function tlRender() {
+  const ds = tlDateStr(), nd = tlNextDateStr();
+  const nextDate = new Date(tlDate); nextDate.setDate(tlDate.getDate() + 1);
+  document.getElementById('tl-date-label').textContent = tlDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  // Tick labels
-  const tickHours=[0,3,6,9,12,15,18,21,24,27,30,33,36,39,42,45,48];
-  document.getElementById('tl-ticks').innerHTML=tickHours.map((h,i)=>{
-    const isLast=i===tickHours.length-1; if(isLast) return `<div class="tl-tick" style="flex:0.001"></div>`;
-    const hh=h%24; const lbl=hh===0?(h===0?'12a':'<span style="color:var(--blue-dk);font-size:8px">↑nxt</span>'):hh<12?`${hh}a`:hh===12?'12p':`${hh-12}p`;
+  const tickHours = [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48];
+  document.getElementById('tl-ticks').innerHTML = tickHours.map((h, i) => {
+    const isLast = i === tickHours.length - 1; if (isLast) return `<div class="tl-tick" style="flex:0.001"></div>`;
+    const hh = h % 24; const lbl = hh === 0 ? (h === 0 ? '12a' : '<span style="color:var(--blue-dk);font-size:8px">↑nxt</span>') : hh < 12 ? `${hh}a` : hh === 12 ? '12p' : `${hh - 12}p`;
     return `<div class="tl-tick">${lbl}</div>`;
   }).join('');
 
-  document.getElementById('tl-sublabel').innerHTML=`<span>${fmtShort(tlDate)}</span><span style="color:var(--border2)">·····</span><span>midnight</span><span style="color:var(--border2)">·····</span><span>${fmtShort(nextDate)}</span>`;
+  document.getElementById('tl-sublabel').innerHTML = `<span>${fmtShort(tlDate)}</span><span style="color:var(--border2)">·····</span><span>midnight</span><span style="color:var(--border2)">·····</span><span>${fmtShort(nextDate)}</span>`;
 
-  if(!selBundleId){
-    document.getElementById('tl-tracks').innerHTML='<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center;border:1px dashed var(--border);border-radius:6px;">Select a bundle above to view availability.</div>';
+  if (!selBundleId) {
+    document.getElementById('tl-tracks').innerHTML = '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center;border:1px dashed var(--border);border-radius:6px;">Select a bundle above to view availability.</div>';
     return;
   }
 
-  const b=BUNDLES.find(x=>x.id===selBundleId);
-  const activeItems=[...b.items,...selOptItems];
-  const tracksEl=document.getElementById('tl-tracks'); tracksEl.innerHTML='';
-  const selStartMin=stepToMin(tlStartStep),selEndMin=stepToMin(tlEndStep);
+  const b = BUNDLES.find(x => x.id === selBundleId);
+  const activeItems = [...b.items, ...selOptItems];
+  const tracksEl = document.getElementById('tl-tracks'); tracksEl.innerHTML = '';
+  const selStartMin = stepToMin(tlStartStep), selEndMin = stepToMin(tlEndStep);
 
-  function getBookingsFor48h(itemId){ return bookings.filter(bk=>bk.itemIds.includes(itemId)&&(bk.date===ds||bk.date===nd)); }
-  function bookingToAbsRange(bk){
-    const sMin=timeToMins(bk.startTime),eMin=timeToMins(bk.endTime),isOvernight=eMin<=sMin;
-    if(bk.date===ds) return [sMin,isOvernight?1440+eMin:eMin];
-    if(bk.date===nd){ const a=1440+sMin; return [a,isOvernight?2880+eMin:1440+eMin]; }
+  function getBookingsFor48h(itemId) { return bookings.filter(bk => bk.itemIds.includes(itemId) && (bk.date === ds || bk.date === nd)); }
+  function bookingToAbsRange(bk) {
+    const sMin = timeToMins(bk.startTime), eMin = timeToMins(bk.endTime), isOvernight = eMin <= sMin;
+    if (bk.date === ds) return [sMin, isOvernight ? 1440 + eMin : eMin];
+    if (bk.date === nd) { const a = 1440 + sMin; return [a, isOvernight ? 2880 + eMin : 1440 + eMin]; }
     return null;
   }
 
-  let anyConflict=false;
-  activeItems.forEach(iid=>{
-    const row=document.createElement('div'); row.className='tl-row';
-    const lbl=document.createElement('div'); lbl.className='tl-label'; lbl.textContent=ITEMS[iid].label;
-    const track=document.createElement('div'); track.className='tl-track';
-    let hasConflict=false;
-    getBookingsFor48h(iid).forEach(bk=>{
-      const range=bookingToAbsRange(bk); if(!range) return;
-      const [absStart,absEnd]=range;
-      const seg=document.createElement('div'); seg.className='tl-booked';
-      seg.style.left=(absStart/TL_MINS*100)+'%'; seg.style.width=((absEnd-absStart)/TL_MINS*100)+'%';
-      const segLbl=document.createElement('div'); segLbl.className='tl-booked-label'; segLbl.textContent=bk.name;
+  let anyConflict = false;
+  activeItems.forEach(iid => {
+    const row = document.createElement('div'); row.className = 'tl-row';
+    const lbl = document.createElement('div'); lbl.className = 'tl-label'; lbl.textContent = ITEMS[iid].label;
+    const track = document.createElement('div'); track.className = 'tl-track';
+    let hasConflict = false;
+    getBookingsFor48h(iid).forEach(bk => {
+      const range = bookingToAbsRange(bk); if (!range) return;
+      const [absStart, absEnd] = range;
+      const seg = document.createElement('div'); seg.className = 'tl-booked';
+      seg.style.left = (absStart / TL_MINS * 100) + '%'; seg.style.width = ((absEnd - absStart) / TL_MINS * 100) + '%';
+      const segLbl = document.createElement('div'); segLbl.className = 'tl-booked-label'; segLbl.textContent = bk.name;
       seg.appendChild(segLbl); track.appendChild(seg);
-      if(!(absEnd<=selStartMin||absStart>=selEndMin)) hasConflict=true;
+      if (!(absEnd <= selStartMin || absStart >= selEndMin)) hasConflict = true;
     });
-    if(hasConflict) anyConflict=true;
-    const sel=document.createElement('div');
-    sel.style.left=(selStartMin/TL_MINS*100)+'%'; sel.style.width=((selEndMin-selStartMin)/TL_MINS*100)+'%';
-    sel.className='tl-selection '+(hasConflict?'conflict':'ok');
+    if (hasConflict) anyConflict = true;
+    const sel = document.createElement('div');
+    sel.style.left = (selStartMin / TL_MINS * 100) + '%'; sel.style.width = ((selEndMin - selStartMin) / TL_MINS * 100) + '%';
+    sel.className = 'tl-selection ' + (hasConflict ? 'conflict' : 'ok');
     track.appendChild(sel); row.appendChild(lbl); row.appendChild(track); tracksEl.appendChild(row);
   });
 
-  // Duration
-  const diffMin=selEndMin-selStartMin;
-  document.getElementById('tl-duration').textContent=`${Math.floor(diffMin/60)}h${diffMin%60>0?` ${diffMin%60}m`:''}`;
+  const diffMin = selEndMin - selStartMin;
+  document.getElementById('tl-duration').textContent = `${Math.floor(diffMin / 60)}h${diffMin % 60 > 0 ? ` ${diffMin % 60}m` : ''}`;
 
-  // Time display
-  const crossesMidnight=selEndMin>=1440;
-  const startLbl=crossesMidnight?`${fmtShort(tlDate)} ${minToTime12(selStartMin)}`:minToTime12(selStartMin);
-  const endLbl=crossesMidnight?`${fmtShort(nextDate)} ${minToTime12(selEndMin)}`:minToTime12(selEndMin);
-  document.getElementById('tl-time-display').textContent=`${startLbl} – ${endLbl}`;
+  const crossesMidnight = selEndMin >= 1440;
+  const startLbl = crossesMidnight ? `${fmtShort(tlDate)} ${minToTime12(selStartMin)}` : minToTime12(selStartMin);
+  const endLbl = crossesMidnight ? `${fmtShort(nextDate)} ${minToTime12(selEndMin)}` : minToTime12(selEndMin);
+  document.getElementById('tl-time-display').textContent = `${startLbl} – ${endLbl}`;
 
-  // Conflict note + fill color
-  const noteEl=document.getElementById('tl-conflict-note');
-  const fillEl=document.getElementById('range-fill');
-  if(anyConflict){ fillEl.classList.add('conflict'); noteEl.textContent='⚠ Conflict: selected window overlaps an existing booking.'; noteEl.classList.add('visible'); }
+  const noteEl = document.getElementById('tl-conflict-note');
+  const fillEl = document.getElementById('range-fill');
+  if (anyConflict) { fillEl.classList.add('conflict'); noteEl.textContent = '⚠ Conflict: selected window overlaps an existing booking.'; noteEl.classList.add('visible'); }
   else { fillEl.classList.remove('conflict'); noteEl.classList.remove('visible'); }
 
-  // Summary
-  const isPast=tlDate<new Date().setHours(0,0,0,0);
-  if(anyConflict||isPast){ document.getElementById('sum-time').textContent='Conflict / Invalid'; document.getElementById('sum-time').style.color='var(--red)'; }
-  else { document.getElementById('sum-date').textContent=fmtShort(tlDate); document.getElementById('sum-time').textContent=`${startLbl} – ${endLbl}`; document.getElementById('sum-time').style.color='var(--text)'; document.getElementById('s3-num').className='step-num done'; }
+  const isPast = tlDate < new Date().setHours(0, 0, 0, 0);
+  if (anyConflict || isPast) { document.getElementById('sum-time').textContent = 'Conflict / Invalid'; document.getElementById('sum-time').style.color = 'var(--red)'; }
+  else { document.getElementById('sum-date').textContent = fmtShort(tlDate); document.getElementById('sum-time').textContent = `${startLbl} – ${endLbl}`; document.getElementById('sum-time').style.color = 'var(--text)'; document.getElementById('s3-num').className = 'step-num done'; }
   checkValid();
 }
 
 // ── DRAG SLIDER ────────────────────────────────────────────────────────────
-function tlInitSliders(){
-  const MIN_GAP=2, MAX_GAP=95;
-  const track=document.getElementById('range-track');
-  const fillEl=document.getElementById('range-fill');
-  const centerEl=document.getElementById('range-center');
-  const handleS=document.getElementById('range-handle-start');
-  const handleE=document.getElementById('range-handle-end');
+function tlInitSliders() {
+  const MIN_GAP = 2, MAX_GAP = 95;
+  const track = document.getElementById('range-track');
+  const fillEl = document.getElementById('range-fill');
+  const centerEl = document.getElementById('range-center');
+  const handleS = document.getElementById('range-handle-start');
+  const handleE = document.getElementById('range-handle-end');
 
-  function pxToStep(clientX){ const r=track.getBoundingClientRect(); return Math.round(Math.max(0,Math.min(TL_STEPS,(clientX-r.left)/r.width*TL_STEPS))); }
-  function updateDOM(){
-    const sl=(tlStartStep/TL_STEPS*100).toFixed(3)+'%', el=(tlEndStep/TL_STEPS*100).toFixed(3)+'%', w=((tlEndStep-tlStartStep)/TL_STEPS*100).toFixed(3)+'%';
-    fillEl.style.left=sl; fillEl.style.width=w; centerEl.style.left=sl; centerEl.style.width=w; handleS.style.left=sl; handleE.style.left=el;
-    centerEl.style.background=fillEl.classList.contains('conflict')?'rgba(239,68,68,0.15)':'rgba(37,99,235,0.12)';
+  function pxToStep(clientX) { const r = track.getBoundingClientRect(); return Math.round(Math.max(0, Math.min(TL_STEPS, (clientX - r.left) / r.width * TL_STEPS))); }
+  function updateDOM() {
+    const sl = (tlStartStep / TL_STEPS * 100).toFixed(3) + '%', el = (tlEndStep / TL_STEPS * 100).toFixed(3) + '%', w = ((tlEndStep - tlStartStep) / TL_STEPS * 100).toFixed(3) + '%';
+    fillEl.style.left = sl; fillEl.style.width = w; centerEl.style.left = sl; centerEl.style.width = w; handleS.style.left = sl; handleE.style.left = el;
+    centerEl.style.background = fillEl.classList.contains('conflict') ? 'rgba(239,68,68,0.15)' : 'rgba(37,99,235,0.12)';
     tlRender(); checkValid();
   }
-  function makeDraggable(el,onDrag){
-    el.addEventListener('pointerdown',function(e){
+  function makeDraggable(el, onDrag) {
+    el.addEventListener('pointerdown', function(e) {
       e.preventDefault(); e.stopPropagation(); this.setPointerCapture(e.pointerId); this.classList.add('dragging');
-      const move=ev=>{ev.preventDefault();onDrag(ev.clientX);updateDOM();};
-      const up=()=>{ this.classList.remove('dragging'); this.removeEventListener('pointermove',move); this.removeEventListener('pointerup',up); this.removeEventListener('pointercancel',up); };
-      this.addEventListener('pointermove',move); this.addEventListener('pointerup',up); this.addEventListener('pointercancel',up);
+      const move = ev => { ev.preventDefault(); onDrag(ev.clientX); updateDOM(); };
+      const up = () => { this.classList.remove('dragging'); this.removeEventListener('pointermove', move); this.removeEventListener('pointerup', up); this.removeEventListener('pointercancel', up); };
+      this.addEventListener('pointermove', move); this.addEventListener('pointerup', up); this.addEventListener('pointercancel', up);
     });
   }
-  makeDraggable(handleS,cx=>{ let s=pxToStep(cx); s=Math.max(0,Math.min(s,tlEndStep-MIN_GAP)); if(tlEndStep-s>MAX_GAP) s=tlEndStep-MAX_GAP; tlStartStep=s; });
-  makeDraggable(handleE,cx=>{ let e=pxToStep(cx); e=Math.max(tlStartStep+MIN_GAP,Math.min(e,TL_STEPS)); if(e-tlStartStep>MAX_GAP) e=tlStartStep+MAX_GAP; tlEndStep=e; });
-  let _dragStartX=null,_dragS,_dragE;
-  makeDraggable(centerEl,cx=>{
-    if(_dragStartX===null) return;
-    const r=track.getBoundingClientRect(), dSteps=Math.round((cx-_dragStartX)/r.width*TL_STEPS);
-    let ns=_dragS+dSteps,ne=_dragE+dSteps;
-    if(ns<0){ne-=ns;ns=0;} if(ne>TL_STEPS){ns-=(ne-TL_STEPS);ne=TL_STEPS;}
-    tlStartStep=Math.max(0,ns); tlEndStep=Math.min(TL_STEPS,ne);
+  makeDraggable(handleS, cx => { let s = pxToStep(cx); s = Math.max(0, Math.min(s, tlEndStep - MIN_GAP)); if (tlEndStep - s > MAX_GAP) s = tlEndStep - MAX_GAP; tlStartStep = s; });
+  makeDraggable(handleE, cx => { let e = pxToStep(cx); e = Math.max(tlStartStep + MIN_GAP, Math.min(e, TL_STEPS)); if (e - tlStartStep > MAX_GAP) e = tlStartStep + MAX_GAP; tlEndStep = e; });
+  let _dragStartX = null, _dragS, _dragE;
+  makeDraggable(centerEl, cx => {
+    if (_dragStartX === null) return;
+    const r = track.getBoundingClientRect(), dSteps = Math.round((cx - _dragStartX) / r.width * TL_STEPS);
+    let ns = _dragS + dSteps, ne = _dragE + dSteps;
+    if (ns < 0) { ne -= ns; ns = 0; } if (ne > TL_STEPS) { ns -= (ne - TL_STEPS); ne = TL_STEPS; }
+    tlStartStep = Math.max(0, ns); tlEndStep = Math.min(TL_STEPS, ne);
   });
-  centerEl.addEventListener('pointerdown',e=>{_dragStartX=e.clientX;_dragS=tlStartStep;_dragE=tlEndStep;});
+  centerEl.addEventListener('pointerdown', e => { _dragStartX = e.clientX; _dragS = tlStartStep; _dragE = tlEndStep; });
   updateDOM();
 }
 
 // ── VALIDATION ─────────────────────────────────────────────────────────────
-function checkValid(){
-  const ok1=!!selBundleId;
-  const timeText=document.getElementById('sum-time').textContent;
-  const ok2=ok1&&timeText!=='Conflict / Invalid'&&timeText!=='-';
-  const ok3=document.getElementById('f-name').value.trim()!==''&&
-            document.getElementById('f-email').value.trim()!==''&&
-            document.getElementById('f-phone').value.trim()!==''&&
-            document.getElementById('f-sid').value.trim()!=='';
-  document.getElementById('s4-num').className='step-num'+(ok3?' done':'');
-  document.getElementById('btn-submit').disabled=!(ok1&&ok2&&ok3);
+function checkValid() {
+  const ok1 = !!selBundleId;
+  const timeText = document.getElementById('sum-time').textContent;
+  const ok2 = ok1 && timeText !== 'Conflict / Invalid' && timeText !== '-';
+  const ok3 = document.getElementById('f-name').value.trim() !== '' &&
+              document.getElementById('f-email').value.trim() !== '' &&
+              document.getElementById('f-phone').value.trim() !== '' &&
+              document.getElementById('f-sid').value.trim() !== '';
+  document.getElementById('s4-num').className = 'step-num' + (ok3 ? ' done' : '');
+  document.getElementById('btn-submit').disabled = !(ok1 && ok2 && ok3);
 }
-['f-name','f-email','f-phone','f-sid'].forEach(id=>document.getElementById(id).addEventListener('input',checkValid));
+['f-name', 'f-email', 'f-phone', 'f-sid'].forEach(id => document.getElementById(id).addEventListener('input', checkValid));
 
 // ── MY BOOKINGS ────────────────────────────────────────────────────────────
-function updateMyBookings(){
-  if(!currentUser) return;
-  const list=document.getElementById('my-bookings-list'); list.innerHTML='';
-  const mine=bookings.filter(b=>b.createdBy===currentUser.email&&new Date(b.date+'T'+b.startTime)>=new Date().setHours(0,0,0,0));
-  if(mine.length===0){document.getElementById('my-bookings-card').style.display='none';return;}
-  document.getElementById('my-bookings-card').style.display='block';
-  mine.sort((a,b)=>new Date(a.date+'T'+a.startTime)-new Date(b.date+'T'+b.startTime));
-  mine.forEach(b=>{
-    const el=document.createElement('div'); el.className='mini-booking';
-    el.innerHTML=`<div class="mini-bk-name">${escHtml(b.group)} <button class="btn-danger" onclick="window.deleteBookingFromServer('${b.id}')">Cancel</button></div><div class="mini-bk-time">${new Date(b.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · ${formatTimeStr(b.startTime)} - ${formatTimeStr(b.endTime)}</div><div class="mini-bk-items">${(b.itemLabels||[]).join(', ')}</div>`;
+function updateMyBookings() {
+  if (!currentUser) return;
+  const list = document.getElementById('my-bookings-list'); list.innerHTML = '';
+  const mine = bookings.filter(b => b.createdBy === currentUser.email && new Date(b.date + 'T' + b.startTime) >= new Date().setHours(0, 0, 0, 0));
+  if (mine.length === 0) { document.getElementById('my-bookings-card').style.display = 'none'; return; }
+  document.getElementById('my-bookings-card').style.display = 'block';
+  mine.sort((a, b) => new Date(a.date + 'T' + a.startTime) - new Date(b.date + 'T' + b.startTime));
+  mine.forEach(b => {
+    const el = document.createElement('div'); el.className = 'mini-booking';
+    el.innerHTML = `<div class="mini-bk-name">${escHtml(b.group)} <button class="btn-danger" onclick="window.deleteBookingFromServer('${b.id}')">Cancel</button></div><div class="mini-bk-time">${new Date(b.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${formatTimeStr(b.startTime)} - ${formatTimeStr(b.endTime)}</div><div class="mini-bk-items">${(b.itemLabels || []).join(', ')}</div>`;
     list.appendChild(el);
   });
 }
 
 // ── SUBMIT ─────────────────────────────────────────────────────────────────
-async function submitBooking(){
-  const btn=document.getElementById('btn-submit'); btn.disabled=true; btn.textContent='Submitting...';
-  const bObj=BUNDLES.find(x=>x.id===selBundleId);
-  const activeItems=[...bObj.items,...selOptItems];
-  const booking={ id:'local_'+Math.random(), group:bObj.name, itemIds:activeItems, itemLabels:activeItems.map(i=>ITEMS[i].label), date:toISODate(tlDate), startTime:minsToTime(stepToMin(tlStartStep)), endTime:minsToTime(stepToMin(tlEndStep)), name:document.getElementById('f-name').value.trim(), email:document.getElementById('f-email').value.trim(), phone:document.getElementById('f-phone').value.trim(), sid:document.getElementById('f-sid').value.trim(), createdBy:currentUser.email };
+async function submitBooking() {
+  const btn = document.getElementById('btn-submit'); btn.disabled = true; btn.textContent = 'Submitting...';
+  const bObj = BUNDLES.find(x => x.id === selBundleId);
+  const activeItems = [...bObj.items, ...selOptItems];
+  const booking = { id: 'local_' + Math.random(), group: bObj.name, itemIds: activeItems, itemLabels: activeItems.map(i => ITEMS[i].label), date: toISODate(tlDate), startTime: minsToTime(stepToMin(tlStartStep)), endTime: minsToTime(stepToMin(tlEndStep)), name: document.getElementById('f-name').value.trim(), email: document.getElementById('f-email').value.trim(), phone: document.getElementById('f-phone').value.trim(), sid: document.getElementById('f-sid').value.trim(), createdBy: currentUser.email };
   try {
     await window.saveBookingToServer(booking);
     showSuccessModal(booking);
-    selBundleId=null; selOptItems=[];
-    ['step3-card','step4-card'].forEach(id=>document.getElementById(id).classList.add('locked'));
+    selBundleId = null; selOptItems = [];
+    ['step3-card', 'step4-card'].forEach(id => document.getElementById(id).classList.add('locked'));
     renderBundlePicker(); tlRender(); checkValid();
-  } catch(e){ showToast('Failed to submit request.','error'); }
-  finally { btn.textContent='Submit Request'; }
+  } catch(e) { showToast('Failed to submit request.', 'error'); }
+  finally { btn.textContent = 'Submit Request'; }
 }
 
 function buildGCalUrl(b) {
-  // startTime/endTime are like "10:00", date is "2026-04-01"
   const [sy, sm, sd] = b.date.split('-');
   const [sh, smin] = b.startTime.split(':');
-  // Handle overnight: if endTime hours >= 24, roll to next day
   const endMins = timeToMins(b.endTime);
   const endDate = endMins >= 1440
-    ? (() => { const d = new Date(b.date+'T00:00:00'); d.setDate(d.getDate()+1); return toISODate(d); })()
+    ? (() => { const d = new Date(b.date + 'T00:00:00'); d.setDate(d.getDate() + 1); return toISODate(d); })()
     : b.date;
   const [ey, em, ed] = endDate.split('-');
-  const [eh, emin] = b.endTime.split(':').map((v,i) => i===0 ? String(parseInt(v)%24).padStart(2,'0') : v);
+  const [eh, emin] = b.endTime.split(':').map((v, i) => i === 0 ? String(parseInt(v) % 24).padStart(2, '0') : v);
   const startDt = `${sy}${sm}${sd}T${sh}${smin}00`;
   const endDt   = `${ey}${em}${ed}T${eh}${emin}00`;
   const title   = encodeURIComponent(`IRPM Checkout — ${b.itemLabels.join(' + ')} — ${b.name}`);
@@ -820,7 +823,7 @@ function showSuccessModal(b) {
   const gcalUrl = buildGCalUrl(b);
   document.getElementById('modal-text').innerHTML = `
     Your reservation for <b>${escHtml(b.group)}</b> is confirmed.<br><br>
-    📅 ${new Date(b.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}<br>
+    📅 ${new Date(b.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}<br>
     ⏰ ${formatTimeStr(b.startTime)} – ${formatTimeStr(b.endTime)}<br>
     📧 ${escHtml(b.email)}
     <div class="hint" style="margin-top:14px;">
@@ -831,23 +834,23 @@ function showSuccessModal(b) {
     </div>`;
   document.getElementById('modal').classList.add('open');
 }
-function closeModal(){ document.getElementById('modal').classList.remove('open'); }
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
 
 // ── UTILS ──────────────────────────────────────────────────────────────────
-function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function showToast(msg,type='success'){const t=document.getElementById('toast');t.textContent=msg;t.className='toast '+type;void t.offsetWidth;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);}
+function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function showToast(msg, type = 'success') { const t = document.getElementById('toast'); t.textContent = msg; t.className = 'toast ' + type; void t.offsetWidth; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3200); }
 
 // ── INIT ───────────────────────────────────────────────────────────────────
-Object.defineProperty(window,'_isStaff',{get:()=>typeof isStaff!=='undefined'?isStaff:false,configurable:true});
-tlDate=new Date(); tlDate.setHours(0,0,0,0);
+Object.defineProperty(window, '_isStaff', { get: () => typeof isStaff !== 'undefined' ? isStaff : false, configurable: true });
+tlDate = new Date(); tlDate.setHours(0, 0, 0, 0);
 renderBundlePicker();
 tlInitSliders();
 tlRender();
 renderSchedule();
-document.getElementById('f-name').addEventListener('focus',()=>{
-  if(!document.getElementById('f-name').value&&currentUser){
-    document.getElementById('f-name').value=currentUser.user_metadata?.full_name||'';
-    document.getElementById('f-email').value=currentUser.email;
+document.getElementById('f-name').addEventListener('focus', () => {
+  if (!document.getElementById('f-name').value && currentUser) {
+    document.getElementById('f-name').value = currentUser.user_metadata?.full_name || '';
+    document.getElementById('f-email').value = currentUser.email;
     checkValid();
   }
 });
