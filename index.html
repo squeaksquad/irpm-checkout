@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IRPM Equipment Checkout</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #1a1e26;
+    --border: #252a35;
+    --accent: #4ade80;
+    --accent2: #22d3ee;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --card-glow: 0 0 0 1px var(--border), 0 4px 24px rgba(0,0,0,0.4);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Syne', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(74,222,128,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(74,222,128,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  header {
+    z-index: 10;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(10,12,16,0.97);
+    backdrop-filter: blur(12px);
+    position: sticky;
+    top: 0;
+  }
+
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-mark {
+    width: 36px; height: 36px;
+    background: var(--accent); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 14px; color: #000; letter-spacing: -0.5px;
+  }
+  .logo-text { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+  .logo-sub { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); letter-spacing: 0.5px; margin-top: 1px; }
+
+  nav { display: flex; gap: 4px; }
+  .nav-btn {
+    padding: 8px 16px; border-radius: 8px; border: 1px solid transparent;
+    background: transparent; color: var(--muted);
+    font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .nav-btn:hover { color: var(--text); background: var(--surface); }
+  .nav-btn.active { color: var(--accent); background: rgba(74,222,128,0.1); border-color: rgba(74,222,128,0.25); }
+
+  main { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ── SECTION HEADER ── */
+  .section-header { margin-bottom: 28px; }
+  .section-title { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
+  .section-sub { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--muted); letter-spacing: 0.3px; }
+
+  /* ── WEEK NAV ── */
+  .week-nav { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+  .week-label { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--accent); min-width: 200px; text-align: center; }
+  .week-btn {
+    width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.15s;
+  }
+  .week-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── SCHEDULE GRID ── */
+  .schedule-grid {
+    background: var(--surface); border-radius: 16px;
+    border: 1px solid var(--border); overflow: hidden; box-shadow: var(--card-glow);
+  }
+  .schedule-header { display: grid; grid-template-columns: 160px repeat(7, 1fr); border-bottom: 1px solid var(--border); }
+  .schedule-header-cell {
+    padding: 14px 12px; text-align: center;
+    font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.5px;
+    color: var(--muted); border-right: 1px solid var(--border);
+  }
+  .schedule-header-cell:last-child { border-right: none; }
+  .schedule-header-cell.today-col { color: var(--accent); background: rgba(74,222,128,0.05); }
+
+  .item-row { display: grid; grid-template-columns: 160px repeat(7, 1fr); border-bottom: 1px solid var(--border); min-height: 72px; }
+  .item-row:last-child { border-bottom: none; }
+
+  /* Pair group divider */
+  .pair-divider {
+    grid-column: 1 / -1;
+    padding: 7px 16px;
+    background: rgba(74,222,128,0.04);
+    border-bottom: 1px solid var(--border);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pair-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(74,222,128,0.12);
+  }
+
+  .item-label {
+    padding: 16px 14px; border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  }
+  .item-name { font-size: 13px; font-weight: 700; letter-spacing: -0.2px; }
+  .item-type { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); }
+
+  .day-cell {
+    border-right: 1px solid var(--border); padding: 8px 6px;
+    display: flex; flex-direction: column; gap: 4px; min-height: 72px;
+  }
+  .day-cell:last-child { border-right: none; }
+  .day-cell.today-col { background: rgba(74,222,128,0.03); }
+
+  .booking-block {
+    background: rgba(74,222,128,0.15); border: 1px solid rgba(74,222,128,0.35);
+    border-radius: 6px; padding: 5px 7px; font-family: 'DM Mono', monospace;
+    font-size: 10px; color: var(--accent); line-height: 1.3; cursor: default; transition: all 0.15s;
+  }
+  .booking-block:hover { background: rgba(74,222,128,0.25); }
+  .booking-block .bk-name { font-size: 10px; font-weight: 500; }
+  .booking-block .bk-time { font-size: 9px; color: rgba(74,222,128,0.7); }
+
+  /* ── CHECKOUT LAYOUT ── */
+  .checkout-layout { display: grid; grid-template-columns: 1fr 340px; gap: 28px; align-items: start; }
+  @media (max-width: 860px) {
+    .checkout-layout { grid-template-columns: 1fr; }
+    .nav { padding: 0 16px; }
+    .nav-logo { font-size: 15px; }
+    .content-wrap { padding: 20px 12px; }
+    .schedule-title { font-size: 28px; }
+  }
+
+  /* ── MOBILE SCHEDULE: single-column day view ── */
+  @media (max-width: 640px) {
+    .schedule-header { display: none; }
+    .item-row {
+      display: block;
+      padding: 12px 14px;
+      min-height: unset;
+    }
+    .item-label { margin-bottom: 8px; }
+    .day-cell { display: none; }
+    .day-cell.mobile-active { display: block; min-height: 48px; padding: 4px 0; }
+    .mobile-day-nav {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px;
+    }
+    .mobile-day-label {
+      font-family: 'DM Mono', monospace; font-size: 13px; color: var(--accent);
+      text-align: center; flex: 1;
+    }
+    .tl-row { flex-direction: column; gap: 4px; }
+    .tl-label { font-size: 10px; margin-bottom: 2px; }
+    .tl-track { height: 22px; }
+    .tl-booked-label { display: none; }
+    .group-grid { grid-template-columns: 1fr; }
+    .modal { padding: 12px; }
+    .modal-card { padding: 24px 18px; border-radius: 18px; }
+  }
+
+  /* ── ITEM SELECTOR ── */
+  .item-selector-wrap { margin-bottom: 24px; }
+  .selector-label { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 12px; }
+
+  .group-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+  .group-card {
+    background: var(--surface); border: 2px solid var(--border);
+    border-radius: 14px; padding: 16px 20px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden;
+  }
+  .group-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--accent); transform: scaleX(0); transition: transform 0.2s; transform-origin: left; }
+  .group-card:hover { border-color: rgba(74,222,128,0.35); background: var(--surface2); }
+  .group-card:hover::before { transform: scaleX(1); }
+  .group-card.selected { border-color: var(--accent); background: rgba(74,222,128,0.07); }
+  .group-card.selected::before { transform: scaleX(1); }
+  .group-card-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .group-card-sub { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); }
+
+  .item-toggles { display: none; }
+  .item-toggles.visible { display: block; }
+  .toggle-header { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--accent); letter-spacing: 0.8px; margin-bottom: 10px; }
+  .toggle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .item-toggle {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface); border: 2px solid var(--border);
+    border-radius: 12px; padding: 14px 16px; cursor: pointer; transition: all 0.18s; position: relative;
+  }
+  .item-toggle:hover { border-color: rgba(74,222,128,0.3); background: var(--surface2); }
+  .item-toggle.active { border-color: var(--accent); background: rgba(74,222,128,0.08); }
+  .item-toggle.unavailable { opacity: 0.45; pointer-events: none; }
+
+  .toggle-check {
+    width: 20px; height: 20px; border-radius: 6px; border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: all 0.15s; font-size: 11px;
+  }
+  .item-toggle.active .toggle-check { background: var(--accent); border-color: var(--accent); color: #000; }
+  .toggle-info { flex: 1; min-width: 0; }
+  .toggle-name { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+  .toggle-tag { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--muted); }
+  .toggle-required { font-family: 'DM Mono', monospace; font-size: 9px; padding: 2px 7px; border-radius: 4px; background: rgba(74,222,128,0.1); color: var(--accent); border: 1px solid rgba(74,222,128,0.2); flex-shrink: 0; }
+  .toggle-optional { font-family: 'DM Mono', monospace; font-size: 9px; padding: 2px 7px; border-radius: 4px; background: rgba(107,114,128,0.1); color: var(--muted); border: 1px solid rgba(107,114,128,0.2); flex-shrink: 0; }
+
+  .status-pill { font-family: 'DM Mono', monospace; font-size: 9px; padding: 3px 8px; border-radius: 20px; border: 1px solid; display: flex; align-items: center; gap: 4px; }
+  .status-pill.avail { color: var(--accent); border-color: rgba(74,222,128,0.3); background: rgba(74,222,128,0.08); }
+  .status-pill.busy  { color: var(--danger); border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.08); }
+  .status-pill.partial { color: var(--warn); border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
+  .status-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; display: inline-block; }
+
+  /* ── TIMELINE PICKER ── */
+  .timeline-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 22px 24px; margin-bottom: 20px; box-shadow: var(--card-glow);
+  }
+  .timeline-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
+  }
+  .timeline-title { font-size: 14px; font-weight: 700; }
+  .timeline-date-display {
+    font-family: 'DM Mono', monospace; font-size: 11px; color: var(--accent);
+  }
+
+  /* Date nav row */
+  .date-nav {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 20px;
+  }
+  .date-nav-btn {
+    width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.15s; flex-shrink: 0;
+  }
+  .date-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .date-nav-label {
+    flex: 1; text-align: center; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text);
+  }
+  .date-input-hidden { display: none; }
+
+  /* Timeline tracks */
+  .tl-tracks { margin-bottom: 14px; }
+  .tl-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .tl-label {
+    font-family: 'DM Mono', monospace; font-size: 9px; color: var(--muted);
+    width: 88px; flex-shrink: 0; line-height: 1.3; text-align: right;
+  }
+  .tl-track {
+    flex: 1; height: 28px; background: rgba(255,255,255,0.03);
+    border-radius: 6px; border: 1px solid var(--border); position: relative; overflow: hidden;
+  }
+  .tl-track.is-selected-item { border-color: rgba(74,222,128,0.2); }
+
+  /* Booked segments on track */
+  .tl-booked {
+    position: absolute; top: 3px; bottom: 3px;
+    background: rgba(239,68,68,0.35); border: 1px solid rgba(239,68,68,0.5);
+    border-radius: 4px; pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .tl-booked-label {
+    font-family: 'DM Mono', monospace; font-size: 8px; color: rgba(239,68,68,0.9);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px;
+  }
+
+  /* Selection range on track */
+  .tl-selection {
+    position: absolute; top: 0; bottom: 0;
+    border-radius: 4px; pointer-events: none; transition: left 0.05s, width 0.05s;
+  }
+  .tl-selection.ok { background: rgba(74,222,128,0.22); border: 1px solid rgba(74,222,128,0.5); }
+  .tl-selection.conflict { background: rgba(239,68,68,0.18); border: 1px solid rgba(239,68,68,0.45); }
+  .tl-selection.inactive { background: rgba(107,114,128,0.12); border: 1px solid rgba(107,114,128,0.2); }
+
+  /* Hour tick marks */
+  .tl-ticks {
+    display: flex; padding-left: 98px; margin-bottom: 6px;
+  }
+  .tl-tick {
+    flex: 1; font-family: 'DM Mono', monospace; font-size: 9px; color: var(--muted);
+    text-align: center; position: relative;
+  }
+  .tl-tick::before {
+    content: ''; position: absolute; top: -34px; left: 50%;
+    width: 1px; height: 6px; background: rgba(255,255,255,0.06);
+  }
+
+  /* Range slider section */
+  .tl-slider-section { padding-top: 8px; border-top: 1px solid var(--border); }
+  .tl-slider-label {
+    font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); margin-bottom: 12px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .tl-time-display {
+    font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500;
+    color: var(--accent); letter-spacing: 0.5px;
+  }
+  .tl-duration {
+    font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted);
+  }
+
+  /* Dual range slider */
+  .range-wrap {
+    position: relative; height: 36px; display: flex; align-items: center;
+    margin: 0 0 4px;
+  }
+  .range-track {
+    position: absolute; left: 0; right: 0; height: 6px;
+    background: var(--border); border-radius: 3px;
+  }
+  .range-fill {
+    position: absolute; height: 6px; background: var(--accent);
+    border-radius: 3px; pointer-events: none; transition: left 0.04s, width 0.04s;
+  }
+  .range-fill.conflict { background: var(--danger); }
+
+  .range-input {
+    position: absolute; width: 100%; height: 6px;
+    -webkit-appearance: none; appearance: none;
+    background: transparent; pointer-events: none; outline: none;
+  }
+  .range-input::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--accent); border: 3px solid var(--bg); cursor: pointer;
+    pointer-events: all; box-shadow: 0 0 0 2px rgba(74,222,128,0.3);
+    transition: box-shadow 0.15s, transform 0.1s;
+  }
+  .range-input::-webkit-slider-thumb:hover { transform: scale(1.15); box-shadow: 0 0 0 4px rgba(74,222,128,0.25); }
+  .range-input::-moz-range-thumb {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--accent); border: 3px solid var(--bg); cursor: pointer;
+    pointer-events: all; box-shadow: 0 0 0 2px rgba(74,222,128,0.3);
+  }
+
+  .tl-conflict-note {
+    font-family: 'DM Mono', monospace; font-size: 10px; color: var(--danger);
+    margin-top: 8px; display: none; padding: 8px 10px;
+    background: rgba(239,68,68,0.07); border-radius: 6px; border: 1px solid rgba(239,68,68,0.2);
+    line-height: 1.5;
+  }
+  .tl-conflict-note.visible { display: block; }
+
+  /* ── FORM ── */
+  .form-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px; box-shadow: var(--card-glow);
+  }
+  .form-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 6px; }
+  .field input, .field select {
+    width: 100%; padding: 10px 14px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 10px; color: var(--text);
+    font-family: 'Syne', sans-serif; font-size: 14px; outline: none; transition: border-color 0.15s; appearance: none;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(74,222,128,0.1); }
+  .field input::placeholder { color: var(--muted); }
+
+  .info-note {
+    background: rgba(34,211,238,0.07); border: 1px solid rgba(34,211,238,0.18);
+    border-radius: 10px; padding: 12px 14px; font-family: 'DM Mono', monospace;
+    font-size: 11px; color: var(--accent2); line-height: 1.7; margin-bottom: 18px;
+  }
+
+  .conflict-warn {
+    background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.28);
+    border-radius: 10px; padding: 12px 14px; font-family: 'DM Mono', monospace;
+    font-size: 11px; color: var(--warn); line-height: 1.6; margin-bottom: 14px; display: none;
+  }
+  .conflict-warn.visible { display: block; }
+
+  .submit-btn {
+    width: 100%; padding: 14px; background: var(--accent); border: none; border-radius: 10px;
+    color: #000; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700;
+    cursor: pointer; transition: all 0.2s; letter-spacing: -0.2px;
+  }
+  .submit-btn:hover { background: #86efac; transform: translateY(-1px); }
+  .submit-btn:active { transform: translateY(0); }
+  .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* ── SIDEBAR ── */
+  .sidebar-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px; box-shadow: var(--card-glow); position: sticky; top: 88px;
+  }
+  .sidebar-title { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+
+  .booking-item { padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; position: relative; }
+  .booking-item-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
+  .booking-item-name { font-size: 13px; font-weight: 700; }
+  .booking-item-badge { font-family: 'DM Mono', monospace; font-size: 9px; padding: 3px 7px; border-radius: 4px; background: rgba(74,222,128,0.12); color: var(--accent); border: 1px solid rgba(74,222,128,0.2); }
+  .booking-item-details { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); line-height: 1.7; }
+  .delete-btn {
+    position: absolute; top: 8px; right: 8px; width: 22px; height: 22px;
+    border-radius: 5px; border: 1px solid transparent; background: transparent; color: var(--muted);
+    cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s; opacity: 0;
+  }
+  .booking-item:hover .delete-btn { opacity: 1; }
+  .delete-btn:hover { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.3); color: var(--danger); }
+  .empty-state { text-align: center; padding: 24px 12px; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); line-height: 2; }
+
+  /* ── MODAL ── */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.72); backdrop-filter: blur(6px); z-index: 100; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 32px; max-width: 500px; width: 92%; box-shadow: 0 24px 80px rgba(0,0,0,0.6); animation: modalIn 0.2s ease; }
+  @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+  .modal-icon { width: 52px; height: 52px; border-radius: 13px; background: rgba(74,222,128,0.13); border: 1px solid rgba(74,222,128,0.28); display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 18px; }
+  .modal-title { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+  .modal-body { color: var(--muted); font-size: 13px; line-height: 1.8; margin-bottom: 20px; }
+  .modal-body strong { color: var(--text); }
+  .modal-actions { display: flex; flex-direction: column; gap: 8px; }
+  .modal-btn-gcal { display: flex; align-items: center; gap: 10px; padding: 13px 16px; background: #1a73e8; border-radius: 10px; color: #fff; text-decoration: none; font-weight: 700; font-size: 14px; transition: background 0.15s; font-family: 'Syne', sans-serif; }
+  .modal-btn-gcal:hover { background: #1558c0; }
+  .modal-btn-email { display: flex; align-items: center; gap: 10px; padding: 13px 16px; background: rgba(74,222,128,0.12); border: 1px solid rgba(74,222,128,0.28); border-radius: 10px; color: var(--accent); text-decoration: none; font-weight: 700; font-size: 14px; transition: all 0.15s; font-family: 'Syne', sans-serif; }
+  .modal-btn-email:hover { background: rgba(74,222,128,0.2); }
+  .modal-close { width: 100%; padding: 12px; background: transparent; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .modal-close:hover { border-color: var(--text); color: var(--text); }
+
+  /* ── TOAST ── */
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 13px 18px; font-size: 13px; font-family: 'DM Mono', monospace; z-index: 200; transform: translateY(80px); opacity: 0; transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1); max-width: 320px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { border-color: rgba(74,222,128,0.4); color: var(--accent); }
+  .toast.error { border-color: rgba(239,68,68,0.4); color: var(--danger); }
+  .sync-indicator {
+    display: flex; align-items: center; gap: 6px;
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    padding: 5px 10px; border-radius: 20px; border: 1px solid var(--border);
+    color: var(--muted); background: var(--surface); white-space: nowrap;
+    transition: all 0.3s;
+  }
+  .sync-indicator.syncing { color: var(--accent2); border-color: rgba(34,211,238,0.3); }
+  .sync-indicator.error   { color: var(--warn);    border-color: rgba(245,158,11,0.3); }
+  .sync-indicator.idle    { color: var(--accent);  border-color: rgba(74,222,128,0.25); }
+  .sync-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0;
+  }
+  .sync-indicator.syncing .sync-dot {
+    animation: pulse 0.9s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* Setup banner */
+  .setup-banner {
+    background: rgba(34,211,238,0.07); border: 1px solid rgba(34,211,238,0.25);
+    border-radius: 12px; padding: 16px 20px; margin-bottom: 28px;
+    font-family: 'DM Mono', monospace; font-size: 11px; color: var(--accent2); line-height: 1.9;
+  }
+  .setup-banner strong { color: var(--text); font-family: 'Syne', sans-serif; font-size: 13px; }
+  .setup-banner code {
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
+    padding: 1px 6px; border-radius: 4px; font-size: 11px; color: var(--text);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">IR</div>
+    <div>
+      <div class="logo-text">IRPM Checkout</div>
+      <div class="logo-sub">EQUIPMENT RESERVATION SYSTEM</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <div id="sync-indicator" class="sync-indicator" style="display:none"></div>
+    <nav>
+      <button class="nav-btn active" onclick="switchView('availability')">Availability</button>
+      <button class="nav-btn" onclick="switchView('checkout')">New Checkout</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── AVAILABILITY VIEW ── -->
+  <div class="view active" id="view-availability">
+    <div class="section-header">
+      <div class="section-title">Equipment Schedule</div>
+      <div class="section-sub">// REAL-TIME AVAILABILITY — BUNDLE + STAND BAG PAIRS CAN BE CHECKED OUT TOGETHER</div>
+    </div>
+    <div class="week-nav">
+      <button class="week-btn" onclick="changeWeek(-1)">&#8249;</button>
+      <div class="week-label" id="week-label">—</div>
+      <button class="week-btn" onclick="changeWeek(1)">&#8250;</button>
+      <button class="week-btn" onclick="goToToday()" style="width:auto;padding:0 12px;font-family:'DM Mono',monospace;font-size:11px;">TODAY</button>
+    </div>
+    <div class="schedule-grid">
+      <div class="schedule-header" id="schedule-header">
+        <div class="schedule-header-cell" style="text-align:left;padding-left:16px;font-size:10px;color:#4ade80;letter-spacing:1px;">ITEM</div>
+      </div>
+      <div class="schedule-body" id="schedule-body"></div>
+    </div>
+  </div>
+
+  <!-- ── CHECKOUT VIEW ── -->
+  <div class="view" id="view-checkout">
+    <div class="section-header">
+      <div class="section-title">New Checkout</div>
+      <div class="section-sub">// SELECT A GROUP, THEN CHOOSE WHICH ITEMS — STAND BAGS ARE OPTIONAL</div>
+    </div>
+
+    <div class="checkout-layout">
+      <div>
+        <!-- Item selector -->
+        <div class="item-selector-wrap">
+          <div class="selector-label">Step 1 — Choose a bundle</div>
+          <div class="group-grid" id="group-selector"></div>
+          <div class="item-toggles" id="item-toggles">
+            <div class="toggle-header">STEP 2 — SELECT ITEMS TO CHECK OUT</div>
+            <div class="toggle-grid" id="toggle-grid"></div>
+          </div>
+        </div>
+
+        <!-- Form -->
+        <div class="form-card">
+          <div class="form-title">Reservation Details</div>
+
+          <div class="info-note">
+            ◈ Bundle 1 + Stand Bag 1 can be checked out at the same time (and same for pair 2).<br>
+            ◈ Stand Bags are optional — you can check out a Bundle on its own.<br>
+            ◈ Items may be checked out for up to 24 hours.<br>
+            ◈ Phone number is for internal records only — it will not appear on the calendar event.
+          </div>
+
+          <div class="conflict-warn" id="conflict-warn"></div>
+
+        <!-- ── TIMELINE PICKER ── -->
+        <div class="timeline-card">
+          <div class="timeline-header">
+            <div class="timeline-title">📅 Select Date &amp; Time</div>
+            <div class="tl-time-display" id="tl-time-display">09:00 – 17:00</div>
+          </div>
+
+          <!-- Data scope notice (hidden after setup) -->
+          <div id="tl-data-notice" style="font-family:'DM Mono',monospace;font-size:10px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:8px 12px;margin-bottom:14px;line-height:1.6;color:var(--warn);">
+            ⚠ Running in <strong>local-only mode</strong> — availability reflects this device only. Add your Apps Script URL to enable shared bookings.
+          </div>
+
+          <!-- Date navigation -->
+          <div class="date-nav">
+            <button class="date-nav-btn" onclick="tlChangeDay(-1)">&#8249;</button>
+            <div class="date-nav-label" id="tl-date-label">—</div>
+            <button class="date-nav-btn" onclick="tlChangeDay(1)">&#8250;</button>
+            <button class="date-nav-btn" onclick="tlGoToday()" style="width:auto;padding:0 10px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.5px;">TODAY</button>
+          </div>
+
+          <!-- Hour ticks -->
+          <div class="tl-ticks" id="tl-ticks"></div>
+
+          <!-- Today / Tomorrow sub-label -->
+          <div id="tl-day-sublabel" style="display:flex;justify-content:space-between;align-items:center;padding-left:98px;margin-bottom:10px;font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);gap:4px;"></div>
+
+          <!-- Per-item availability tracks -->
+          <div class="tl-tracks" id="tl-tracks"></div>
+
+          <!-- Dual range sliders -->
+          <div class="tl-slider-section">
+            <div class="tl-slider-label">
+              <span>DRAG TO SET CHECKOUT WINDOW</span>
+              <span class="tl-duration" id="tl-duration">8h 0m</span>
+            </div>
+            <div class="range-wrap">
+              <div class="range-track"></div>
+              <div class="range-fill" id="range-fill"></div>
+              <input class="range-input" type="range" id="range-start" min="0" max="192" value="36" step="1">
+              <input class="range-input" type="range" id="range-end"   min="0" max="192" value="68" step="1">
+            </div>
+            <div class="tl-conflict-note" id="tl-conflict-note"></div>
+          </div>
+        </div>
+
+        <!-- Form -->
+        <div class="form-card">
+          <div class="form-title">Your Details</div>
+
+          <div class="info-note">
+            ◈ Bundle 1 + Stand Bag 1 can be checked out at the same time (same for pair 2).<br>
+            ◈ Stand Bags are optional — you can check out a Bundle on its own.<br>
+            ◈ Items may be checked out for up to 24 hours.<br>
+            ◈ Phone number is for internal records only — it will not appear on the calendar event.
+          </div>
+
+          <div class="conflict-warn" id="conflict-warn"></div>
+
+          <div class="field">
+            <label>Full Name</label>
+            <input type="text" id="f-name" placeholder="Jane Smith" />
+          </div>
+
+          <div class="field">
+            <label>Email Address <span style="color:#4ade80;font-size:10px">(you'll be invited to the calendar event)</span></label>
+            <input type="email" id="f-email" placeholder="you@berklee.edu" />
+          </div>
+
+          <div class="field">
+            <label>Phone Number <span style="color:#6b7280;font-size:10px">(private — not on calendar)</span></label>
+            <input type="tel" id="f-phone" placeholder="(555) 000-0000" />
+          </div>
+
+          <div class="field">
+            <label>Student ID Number</label>
+            <input type="text" id="f-sid" placeholder="e.g. 12345678" />
+          </div>
+
+          <!-- Hidden inputs synced from timeline -->
+          <input type="hidden" id="f-date" />
+          <input type="hidden" id="f-start" />
+          <input type="hidden" id="f-end" />
+
+          <button class="submit-btn" id="submit-btn" onclick="handleSubmit()">
+            Create Reservation
+          </button>
+        </div>
+      </div>
+
+      <!-- Sidebar -->
+      <div>
+        <div class="sidebar-card">
+          <div class="sidebar-title">Current Reservations</div>
+          <div id="booking-list-sidebar"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- SUCCESS MODAL -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-icon">📅</div>
+    <div class="modal-title">Reservation Created!</div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-actions">
+      <button class="modal-btn-gcal" id="confirm-btn" onclick="confirmReservation()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        Confirm &amp; Send
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwpFPALtw4cMf54SB_rbByT1mT6w618-0pKZuwY_Ug81eo38MDk8T6opD2-xYGqYJnv/exec';
+const USING_SHEETS = true;
+
+// ── DATA ──
+const ITEMS = [
+  { id: 'bundle1', name: 'IRPM Bundle 1', icon: '🎸', type: 'BUNDLE',   group: 1, required: true  },
+  { id: 'stand1',  name: 'IRPM Stand Bag 1', icon: '🎒', type: 'STAND BAG', group: 1, required: false },
+  { id: 'bundle2', name: 'IRPM Bundle 2', icon: '🎸', type: 'BUNDLE',   group: 2, required: true  },
+  { id: 'stand2',  name: 'IRPM Stand Bag 2', icon: '🎒', type: 'STAND BAG', group: 2, required: false },
+];
+const GROUPS = [
+  { id: 1, label: 'Bundle 1', desc: 'Bundle 1 · Stand Bag 1' },
+  { id: 2, label: 'Bundle 2', desc: 'Bundle 2 · Stand Bag 2' },
+];
+
+function lsGet(key, fallback) { try { const v = localStorage.getItem(key); return v !== null ? v : fallback; } catch(e) { return fallback; } }
+function lsSet(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
+
+let bookings = JSON.parse(lsGet('irpm_bookings', '[]'));
+let selectedGroup = null;
+let selectedItemIds = [];
+let isSyncing = false;
+
+// ── SYNC STATE ──
+function setSyncState(active, text) {
+  isSyncing = active;
+  const el = document.getElementById('sync-indicator');
+  const notice = document.getElementById('tl-data-notice');
+  if (!el) return;
+  if (!USING_SHEETS) { el.style.display = 'none'; if (notice) notice.style.display = 'block'; return; }
+  if (notice) notice.style.display = 'none';
+  el.style.display = 'flex';
+  el.className = 'sync-indicator ' + (active ? 'syncing' : (text === 'error' ? 'error' : 'idle'));
+  el.innerHTML = active
+    ? `<span class="sync-dot"></span> Syncing…`
+    : text === 'error'
+      ? `<span class="sync-dot"></span> Sync error — showing cached data`
+      : `<span class="sync-dot"></span> Live · ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+}
+
+async function fetchBookingsFromSheets() {
+  if (!USING_SHEETS) return;
+  setSyncState(true);
+  try {
+    const res  = await fetch(APPS_SCRIPT_URL + '?action=list', { cache: 'no-store' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      bookings = data.bookings;
+      lsSet('irpm_bookings', JSON.stringify(bookings));
+      setSyncState(false, 'ok');
+      refreshAllViews();
+    } else throw new Error(data.message || 'Unknown error');
+  } catch(e) { console.warn('Sheets fetch failed:', e); setSyncState(false, 'error'); }
+}
+
+async function saveBookingToSheets(booking) {
+  lsSet('irpm_bookings', JSON.stringify(bookings));
+  if (!USING_SHEETS) return true;
+  setSyncState(true);
+  try {
+    const res  = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: JSON.stringify({ booking }) });
+    const data = await res.json();
+    if (data.status !== 'ok') throw new Error(data.message);
+    setSyncState(false, 'ok');
+    await fetchBookingsFromSheets();
+    return true;
+  } catch(e) { console.warn('Sheets write failed:', e); setSyncState(false, 'error'); showToast('Saved locally — Sheets sync failed.', 'error'); return false; }
+}
+
+async function deleteBookingFromSheets(id) {
+  bookings = bookings.filter(b => b.id !== id);
+  lsSet('irpm_bookings', JSON.stringify(bookings));
+  refreshAllViews();
+  if (!USING_SHEETS) return;
+  try {
+    await fetch(`${APPS_SCRIPT_URL}?action=delete&id=${encodeURIComponent(id)}`);
+    await fetchBookingsFromSheets();
+  } catch(e) { console.warn('Sheets delete failed:', e); setSyncState(false, 'error'); }
+}
+
+function refreshAllViews() { tlInitSliders(); syncHiddenInputs(); tlRender();
+renderSchedule(); renderGroupSelector(); renderSidebar();
+fetchBookingsFromSheets(); tlRender(); }
+
+// ── VIEWS ──
+function switchView(v) {
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('view-' + v).classList.add('active');
+  document.querySelectorAll('.nav-btn')[v === 'availability' ? 0 : 1].classList.add('active');
+  if (v === 'availability') renderSchedule();
+  if (v === 'checkout') { renderGroupSelector(); renderSidebar(); tlRender(); }
+}
+
+// ── DATE UTILS ──
+function getWeekDays(offset) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) + offset * 7);
+  return Array.from({length:7}, (_,i) => { const d = new Date(monday); d.setDate(monday.getDate()+i); return d; });
+}
+function fmtDate(d) {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return MONTHS[d.getMonth()] + ' ' + d.getDate();
+}
+function fmtDay(d) {
+  const DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  return DAYS[d.getDay()];
+}
+function isToday(d) {
+  const t = new Date(); t.setHours(0,0,0,0);
+  const dc = new Date(d); dc.setHours(0,0,0,0);
+  return t.getTime() === dc.getTime();
+}
+function dateStr(d) {
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+function timeToMin(t) { const [h,m] = t.split(':').map(Number); return h*60+m; }
+function minToTime(m) { const h=Math.floor(m/60)%24, mm=m%60; return `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`; }
+function getBookingsForItemDay(itemId, ds) { return bookings.filter(b => b.itemIds.includes(itemId) && b.date === ds); }
+
+// ── SCHEDULE ──
+let weekOffset = 0;
+let mobileDayIndex = 0; // 0-6, which day of the week to show on mobile
+function renderSchedule() {
+  const days = getWeekDays(weekOffset);
+  document.getElementById('week-label').textContent = `${fmtDate(days[0])} — ${fmtDate(days[6])}`;
+  const header = document.getElementById('schedule-header');
+  header.innerHTML = `<div class="schedule-header-cell" style="text-align:left;padding-left:16px;font-size:10px;color:#4ade80;letter-spacing:1px;">ITEM</div>`;
+  days.forEach(d => {
+    const cls = isToday(d) ? 'schedule-header-cell today-col' : 'schedule-header-cell';
+    header.innerHTML += `<div class="${cls}">${fmtDay(d)}<br>${fmtDate(d)}</div>`;
+  });
+  // Mobile day nav
+  const isMobile = window.innerWidth <= 640;
+  if (mobileDayIndex >= days.length) mobileDayIndex = 0;
+  let mobileNav = document.getElementById('mobile-day-nav');
+  if (!mobileNav) {
+    mobileNav = document.createElement('div');
+    mobileNav.id = 'mobile-day-nav';
+    mobileNav.className = 'mobile-day-nav';
+    mobileNav.innerHTML = `<button class="week-btn" onclick="mobileDayIndex=Math.max(0,mobileDayIndex-1);renderSchedule()">‹</button><div class="mobile-day-label" id="mobile-day-label"></div><button class="week-btn" onclick="mobileDayIndex=Math.min(6,mobileDayIndex+1);renderSchedule()">›</button>`;
+    const grid = document.querySelector('.schedule-grid');
+    if (grid) grid.parentNode.insertBefore(mobileNav, grid);
+  }
+  mobileNav.style.display = isMobile ? 'flex' : 'none';
+  const mobileLabel = document.getElementById('mobile-day-label');
+  if (mobileLabel) mobileLabel.textContent = `${fmtDay(days[mobileDayIndex])} · ${fmtDate(days[mobileDayIndex])}`;
+  const body = document.getElementById('schedule-body');
+  body.innerHTML = '';
+  [1, 2].forEach(grp => {
+    const groupItems = ITEMS.filter(i => i.group === grp);
+    const g = GROUPS.find(g => g.id === grp);
+    const divider = document.createElement('div');
+    divider.className = 'pair-divider';
+    divider.textContent = `${g.label.toUpperCase()} — ${g.desc}`;
+    body.appendChild(divider);
+    groupItems.forEach(item => {
+      const row = document.createElement('div'); row.className = 'item-row';
+      row.innerHTML = `<div class="item-label"><div class="item-name">${item.icon} ${item.name}</div><div class="item-type">${item.type}</div></div>`;
+      days.forEach((d, dayIdx) => {
+        const ds = dateStr(d);
+        const dayBookings = getBookingsForItemDay(item.id, ds);
+        const cell = document.createElement('div');
+        const mobileActive = dayIdx === mobileDayIndex ? ' mobile-active' : '';
+        cell.className = 'day-cell' + (isToday(d) ? ' today-col' : '') + mobileActive;
+        if (dayBookings.length === 0) {
+          cell.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;"><div style="width:38%;height:2px;background:rgba(74,222,128,0.13);border-radius:2px;"></div></div>`;
+        } else {
+          dayBookings.forEach(b => {
+            const blk = document.createElement('div'); blk.className = 'booking-block';
+            blk.innerHTML = `<div class="bk-name">${escHtml(b.name)}</div><div class="bk-time">${b.startTime}–${b.endTime}</div>`;
+            blk.title = `${b.name} | ID: ${b.sid} | ${b.startTime}–${b.endTime}`;
+            cell.appendChild(blk);
+          });
+        }
+        row.appendChild(cell);
+      });
+      body.appendChild(row);
+    });
+  });
+}
+function changeWeek(dir) { weekOffset += dir; renderSchedule(); }
+function goToToday() { weekOffset = 0; renderSchedule(); }
+
+// ── TIMELINE ──
+let tlDate = new Date(); tlDate.setHours(0,0,0,0);
+let tlStartStep = 36, tlEndStep = 68;
+const TL_STEPS = 192, TL_MINS = 48 * 60;
+
+function stepToMin(s) { return s * 15; }
+function tlDateStr() { return dateStr(tlDate); }
+function tlNextDateStr() { const d = new Date(tlDate); d.setDate(d.getDate()+1); return dateStr(d); }
+function tlFmtDateLabel(d) {
+  const WDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return WDAYS[d.getDay()] + ', ' + MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+}
+function tlChangeDay(dir) { tlDate = new Date(tlDate); tlDate.setDate(tlDate.getDate()+dir); tlRender(); syncHiddenInputs(); checkConflict(); }
+function tlGoToday() { tlDate = new Date(); tlDate.setHours(0,0,0,0); tlRender(); syncHiddenInputs(); checkConflict(); }
+
+function syncHiddenInputs() {
+  const startMin = stepToMin(tlStartStep), endMin = stepToMin(tlEndStep);
+  document.getElementById('f-date').value  = tlDateStr();
+  document.getElementById('f-start').value = minToTime(startMin % 1440);
+  document.getElementById('f-end').value   = minToTime(endMin % 1440);
+}
+
+function bookingToAbsRange(b, refDateStr, nextDateStr) {
+  const sMin = timeToMin(b.startTime), eMin = timeToMin(b.endTime);
+  const isOvernight = eMin <= sMin;
+  if (b.date === refDateStr) {
+    return [sMin, isOvernight ? 1440 + eMin : eMin];
+  } else if (b.date === nextDateStr) {
+    const absStart = 1440 + sMin;
+    return [absStart, isOvernight ? 2880 + eMin : 1440 + eMin];
+  }
+  return null;
+}
+function getBookingsFor48h(itemId) {
+  const ds = tlDateStr(), nd = tlNextDateStr();
+  return bookings.filter(b => b.itemIds.includes(itemId) && (b.date === ds || b.date === nd));
+}
+
+function tlRender() {
+  const ds = tlDateStr(), nd = tlNextDateStr();
+  const nextDate = new Date(tlDate); nextDate.setDate(tlDate.getDate()+1);
+  document.getElementById('tl-date-label').textContent = tlFmtDateLabel(tlDate);
+
+  const ticksEl = document.getElementById('tl-ticks');
+  const tickHours = [0,3,6,9,12,15,18,21,24,27,30,33,36,39,42,45,48];
+  ticksEl.innerHTML = tickHours.map((h,i) => {
+    const isLast = i === tickHours.length - 1;
+    let lbl = '';
+    if (!isLast) {
+      const hh = h % 24;
+      lbl = hh === 0 ? (h === 0 ? '12a' : '<span style="color:var(--accent2);font-size:8px">↑nxt</span>')
+          : hh < 12 ? `${hh}a` : hh === 12 ? '12p' : `${hh-12}p`;
+    }
+    return `<div class="tl-tick" style="flex:${isLast ? 0.001 : 1}">${lbl}</div>`;
+  }).join('');
+
+  const tracksEl = document.getElementById('tl-tracks');
+  tracksEl.innerHTML = '';
+  const selStartMin = stepToMin(tlStartStep), selEndMin = stepToMin(tlEndStep);
+
+  ITEMS.forEach(item => {
+    const row = document.createElement('div'); row.className = 'tl-row';
+    const lblEl = document.createElement('div'); lblEl.className = 'tl-label'; lblEl.textContent = item.name;
+    row.appendChild(lblEl);
+    const track = document.createElement('div');
+    const isSelected = selectedItemIds.includes(item.id);
+    track.className = 'tl-track' + (isSelected ? ' is-selected-item' : '');
+    track.style.position = 'relative';
+    const midDiv = document.createElement('div');
+    midDiv.style.cssText = 'position:absolute;top:0;bottom:0;left:50%;width:1px;background:rgba(255,255,255,0.08);pointer-events:none;z-index:1;';
+    track.appendChild(midDiv);
+    const allBks = getBookingsFor48h(item.id);
+    let hasConflict = false;
+    allBks.forEach(b => {
+      const range = bookingToAbsRange(b, ds, nd); if (!range) return;
+      const [absStart, absEnd] = range;
+      const seg = document.createElement('div'); seg.className = 'tl-booked';
+      seg.style.left = (absStart / TL_MINS * 100) + '%';
+      seg.style.width = ((absEnd - absStart) / TL_MINS * 100) + '%';
+      const segLbl = document.createElement('div'); segLbl.className = 'tl-booked-label'; segLbl.textContent = b.name;
+      seg.appendChild(segLbl); track.appendChild(seg);
+      if (!(absEnd <= selStartMin || absStart >= selEndMin)) hasConflict = true;
+    });
+    const sel = document.createElement('div');
+    sel.style.left  = (selStartMin / TL_MINS * 100) + '%';
+    sel.style.width = ((selEndMin - selStartMin) / TL_MINS * 100) + '%';
+    sel.className = 'tl-selection ' + (isSelected ? (hasConflict ? 'conflict' : 'ok') : 'inactive');
+    track.appendChild(sel); row.appendChild(track); tracksEl.appendChild(row);
+  });
+
+  const subLbl = document.getElementById('tl-day-sublabel');
+  if (subLbl) subLbl.innerHTML = `<span>${fmtDate(tlDate)}</span><span style="color:var(--border)">——————</span><span style="color:var(--accent2)">midnight</span><span style="color:var(--border)">——————</span><span style="color:var(--accent2)">${fmtDate(nextDate)}</span>`;
+
+  const diffMin = selEndMin - selStartMin;
+  const hh = Math.floor(diffMin/60), mm = diffMin % 60;
+  const crossesMidnight = selEndMin >= 1440;
+  document.getElementById('tl-time-display').textContent = `${minToTime(selStartMin%1440)} – ${minToTime(selEndMin%1440)}${crossesMidnight ? ' (+1)' : ''}`;
+  document.getElementById('tl-duration').textContent = `${hh}h${mm > 0 ? ` ${mm}m` : ''}`;
+
+  const fillEl = document.getElementById('range-fill');
+  fillEl.style.left  = (tlStartStep / TL_STEPS * 100) + '%';
+  fillEl.style.width = ((tlEndStep - tlStartStep) / TL_STEPS * 100) + '%';
+
+  const conflictItems = selectedItemIds.filter(id => getBookingsFor48h(id).some(b => {
+    const range = bookingToAbsRange(b, ds, nd); if (!range) return false;
+    return !(range[1] <= selStartMin || range[0] >= selEndMin);
+  }));
+  const noteEl = document.getElementById('tl-conflict-note');
+  if (conflictItems.length > 0) {
+    fillEl.classList.add('conflict');
+    noteEl.textContent = `⚠ Conflict: ${conflictItems.map(id => ITEMS.find(i=>i.id===id)?.name).join(', ')} already booked during this window`;
+    noteEl.classList.add('visible');
+  } else { fillEl.classList.remove('conflict'); noteEl.classList.remove('visible'); }
+}
+
+function tlInitSliders() {
+  const rangeStart = document.getElementById('range-start');
+  const rangeEnd   = document.getElementById('range-end');
+  rangeStart.max = rangeEnd.max = TL_STEPS;
+  tlStartStep = 36; tlEndStep = 68;
+  rangeStart.value = tlStartStep; rangeEnd.value = tlEndStep;
+  const MIN_GAP = 2, MAX_GAP = 95;
+  let dragging = null;
+  rangeStart.addEventListener('pointerdown', () => { dragging = 'start'; rangeStart.setPointerCapture && rangeStart.setPointerCapture(event.pointerId); });
+  rangeEnd.addEventListener('pointerdown',   () => { dragging = 'end';   rangeEnd.setPointerCapture   && rangeEnd.setPointerCapture(event.pointerId); });
+  document.addEventListener('pointerup', () => { dragging = null; });
+  function applySlider() {
+    let s = parseInt(rangeStart.value), e = parseInt(rangeEnd.value);
+    if (dragging === 'start') {
+      s = Math.max(0, Math.min(s, e - MIN_GAP));
+      if (e - s > MAX_GAP) s = e - MAX_GAP;
+    } else {
+      e = Math.max(s + MIN_GAP, Math.min(e, TL_STEPS));
+      if (e - s > MAX_GAP) e = s + MAX_GAP;
+    }
+    s = Math.max(0, s); e = Math.min(TL_STEPS, e);
+    rangeStart.value = s; rangeEnd.value = e;
+    tlStartStep = s; tlEndStep = e;
+    tlRender(); syncHiddenInputs(); checkConflict();
+    if (selectedGroup) renderItemToggles();
+  }
+  rangeStart.addEventListener('input', applySlider);
+  rangeEnd.addEventListener('input', applySlider);
+}
+
+// ── GROUP SELECTOR ──
+function renderGroupSelector() {
+  const sel = document.getElementById('group-selector');
+  sel.innerHTML = '';
+  GROUPS.forEach(g => {
+    const card = document.createElement('div');
+    card.className = 'group-card' + (selectedGroup === g.id ? ' selected' : '');
+    const groupItems = ITEMS.filter(i => i.group === g.id);
+    const ds = tlDateStr();
+    const statusPills = groupItems.map(item => {
+      const bks = getBookingsForItemDay(item.id, ds);
+      const color = bks.length === 0 ? 'var(--accent)' : 'var(--warn)';
+      return `<span style="font-family:'DM Mono',monospace;font-size:9px;color:${color};">${item.type}: ${bks.length === 0 ? 'Free' : 'Booked'}</span>`;
+    }).join('<span style="color:var(--border);margin:0 4px;">|</span>');
+    card.innerHTML = `<div class="group-card-title">🎸 ${g.label}</div><div class="group-card-sub">${g.desc}</div><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">${statusPills}</div>`;
+    card.onclick = () => selectGroup(g.id);
+    sel.appendChild(card);
+  });
+  const togglesEl = document.getElementById('item-toggles');
+  if (selectedGroup) { togglesEl.classList.add('visible'); renderItemToggles(); }
+  else togglesEl.classList.remove('visible');
+}
+
+function selectGroup(gid) {
+  selectedGroup = gid;
+  const bundleItem = ITEMS.find(i => i.group === gid && i.required);
+  selectedItemIds = [bundleItem.id];
+  renderGroupSelector(); tlRender(); checkConflict();
+}
+
+// ── ITEM TOGGLES ──
+function renderItemToggles() {
+  const grid = document.getElementById('toggle-grid'); grid.innerHTML = '';
+  const groupItems = ITEMS.filter(i => i.group === selectedGroup);
+  const ds = tlDateStr(), nd = tlNextDateStr();
+  const sMin = stepToMin(tlStartStep), eMin = stepToMin(tlEndStep);
+  groupItems.forEach(item => {
+    const isActive = selectedItemIds.includes(item.id);
+    const isRequired = item.required;
+    const hasConflict = getBookingsFor48h(item.id).some(b => {
+      const range = bookingToAbsRange(b, ds, nd); if (!range) return false;
+      return !(range[1] <= sMin || range[0] >= eMin);
+    });
+    const el = document.createElement('div');
+    el.className = 'item-toggle' + (isActive ? ' active' : '') + (hasConflict && !isRequired ? ' unavailable' : '');
+    el.innerHTML = `<div class="toggle-check">${isActive ? '✓' : ''}</div><div class="toggle-info"><div class="toggle-name">${item.icon} ${item.name}</div><div class="toggle-tag">${item.type}${hasConflict ? ' · <span style="color:var(--danger)">CONFLICT</span>' : ''}</div></div><span class="${isRequired ? 'toggle-required' : 'toggle-optional'}">${isRequired ? 'REQUIRED' : 'OPTIONAL'}</span>`;
+    if (!isRequired) {
+      el.onclick = () => {
+        if (hasConflict) return;
+        selectedItemIds = selectedItemIds.includes(item.id) ? selectedItemIds.filter(id => id !== item.id) : [...selectedItemIds, item.id];
+        renderItemToggles(); tlRender(); checkConflict();
+      };
+    }
+    grid.appendChild(el);
+  });
+}
+
+// ── CONFLICT CHECK ──
+function checkConflict() {
+  const warn = document.getElementById('conflict-warn');
+  if (!selectedGroup || selectedItemIds.length === 0) { warn.classList.remove('visible'); warn.textContent = ''; return; }
+  const ds = tlDateStr(), nd = tlNextDateStr();
+  const sMin = stepToMin(tlStartStep), eMin = stepToMin(tlEndStep);
+  const conflicting = selectedItemIds.filter(id => getBookingsFor48h(id).some(b => {
+    const range = bookingToAbsRange(b, ds, nd); if (!range) return false;
+    return !(range[1] <= sMin || range[0] >= eMin);
+  }));
+  if (conflicting.length > 0) {
+    warn.textContent = `⚠ Conflict: ${conflicting.map(id => ITEMS.find(i=>i.id===id)?.name).join(', ')} already booked during this window.`;
+    warn.classList.add('visible');
+  } else { warn.classList.remove('visible'); warn.textContent = ''; }
+}
+
+// ── SIDEBAR ──
+function renderSidebar() {
+  const el = document.getElementById('booking-list-sidebar');
+  if (bookings.length === 0) { el.innerHTML = `<div class="empty-state">No reservations yet.<br>Create your first checkout above.</div>`; return; }
+  const sorted = [...bookings].sort((a,b) => a.date < b.date ? -1 : 1);
+  el.innerHTML = sorted.map(b => `<div class="booking-item"><button class="delete-btn" onclick="deleteBooking('${b.id}')" title="Remove">✕</button><div class="booking-item-header"><div class="booking-item-name">${escHtml(b.itemLabels)}</div><span class="booking-item-badge">ACTIVE</span></div><div class="booking-item-details">${escHtml(b.name)}<br>ID: ${escHtml(b.sid)}<br>${b.date} · ${b.startTime}–${b.endTime}</div></div>`).join('');
+}
+function deleteBooking(id) { deleteBookingFromSheets(id); }
+
+// ── SUBMIT ──
+async function handleSubmit() {
+  const name  = document.getElementById('f-name').value.trim();
+  const email = document.getElementById('f-email').value.trim();
+  const phone = document.getElementById('f-phone').value.trim();
+  const sid   = document.getElementById('f-sid').value.trim();
+  const date  = document.getElementById('f-date').value;
+  const start = document.getElementById('f-start').value;
+  const end   = document.getElementById('f-end').value;
+  if (!selectedGroup)           return showToast('Please select a bundle.', 'error');
+  if (selectedItemIds.length === 0) return showToast('Please select at least one item.', 'error');
+  if (!name)  return showToast('Please enter your name.', 'error');
+  if (!email) return showToast('Please enter your email address.', 'error');
+  if (!phone) return showToast('Please enter your phone number.', 'error');
+  if (!sid)   return showToast('Please enter your Student ID.', 'error');
+  const sMin = stepToMin(tlStartStep), eMin = stepToMin(tlEndStep);
+  const diffMin = eMin - sMin;
+  if (diffMin > 1425) return showToast('Checkout cannot exceed 23h 45m.', 'error');
+  if (diffMin < 15)   return showToast('Please select at least a 15-minute window.', 'error');
+  const conflictingIds = selectedItemIds.filter(id => getBookingsFor48h(id).some(b => {
+    const range = bookingToAbsRange(b, date, tlNextDateStr()); if (!range) return false;
+    return !(range[1] <= sMin || range[0] >= eMin);
+  }));
+  if (conflictingIds.length > 0) return showToast('Time conflict! Adjust the slider or choose different items.', 'error');
+  const itemLabels = selectedItemIds.map(id => ITEMS.find(i=>i.id===id)?.name).join(' + ');
+  const booking = { id: genId(), group: selectedGroup, itemIds: [...selectedItemIds], itemLabels, name, email, phone, sid, date, startTime: start, endTime: end };
+  bookings.push(booking); refreshAllViews();
+  const btn = document.getElementById('submit-btn'); btn.disabled = true; btn.textContent = 'Saving…';
+  await saveBookingToSheets(booking);
+  btn.disabled = false; btn.textContent = 'Create Reservation';
+  showModal(booking, buildGCalUrl(booking), buildMailto(booking));
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-email').value = '';
+  document.getElementById('f-phone').value = '';
+  document.getElementById('f-sid').value = '';
+  selectedGroup = null; selectedItemIds = [];
+  renderGroupSelector(); tlRender();
+}
+
+// ── GCAL ──
+function buildGCalUrl(b) {
+  const dp = b.date.split('-'), [sh,sm] = b.startTime.split(':'), [eh,em] = b.endTime.split(':');
+  const startDt = `${dp[0]}${dp[1]}${dp[2]}T${sh}${sm}00`;
+  let endDate = b.date;
+  if (timeToMin(b.endTime) <= timeToMin(b.startTime)) { const d = new Date(b.date+'T00:00:00'); d.setDate(d.getDate()+1); endDate = dateStr(d); }
+  const edp = endDate.split('-');
+  const endDt = `${edp[0]}${edp[1]}${edp[2]}T${eh}${em}00`;
+  const title   = encodeURIComponent(`IRPM Checkout — ${b.itemLabels} — ${b.name}`);
+  const details = encodeURIComponent(`IRPM Equipment Checkout Reservation\n\nItems: ${b.itemLabels}\nName: ${b.name}\nStudent ID: ${b.sid}\n\nThis item must be returned by the scheduled end time.\nQuestions? Contact studiooperations@berklee.edu`);
+  const guests  = encodeURIComponent(`${b.email},scheduleviewer@berklee.edu`);
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startDt}/${endDt}&details=${details}&add=${guests}`;
+}
+
+// ── MAILTO ──
+function buildMailto(b) {
+  const subject = encodeURIComponent(`[IRPM Checkout] ${b.itemLabels} — ${b.name} — ${b.date}`);
+  const body    = encodeURIComponent(`IRPM Equipment Checkout Confirmation\n${'='.repeat(40)}\n\nItems: ${b.itemLabels}\nName: ${b.name}\nEmail: ${b.email}\nPhone: ${b.phone}\nStudent ID: ${b.sid}\n\nDate: ${b.date}\nTime: ${b.startTime} – ${b.endTime}\n\n${'─'.repeat(40)}\nThis confirmation was generated by the IRPM Checkout system.\nPlease ensure items are returned by the scheduled end time.`);
+  return `mailto:studiooperations@berklee.edu?subject=${subject}&body=${body}`;
+}
+
+// ── MODAL ──
+function showModal(b, gcalUrl, mailtoUrl) {
+  document.getElementById('modal-body').innerHTML = `<strong>${escHtml(b.itemLabels)}</strong> reserved for <strong>${escHtml(b.name)}</strong>.<br><br>📅 ${b.date} &nbsp;·&nbsp; ⏱ ${b.startTime}–${b.endTime}<br>🎓 ID: ${escHtml(b.sid)}<br>📧 ${escHtml(b.email)}<br><br><span style="color:#4ade80;font-size:11px;font-family:'DM Mono',monospace;">◈ Clicking Confirm will open your email client and add the event to Google Calendar.<br>◈ Questions? Contact studiooperations@berklee.edu</span><a id="gcal-link-hidden" href="${gcalUrl}" style="display:none"></a><a id="email-link-hidden" href="${mailtoUrl}" style="display:none"></a>`;
+  document.getElementById('modal').classList.add('open');
+}
+function confirmReservation() {
+  const btn = document.getElementById('confirm-btn');
+  // Open both URLs
+  const gcalHref = document.getElementById('gcal-link-hidden')?.href;
+  const emailHref = document.getElementById('email-link-hidden')?.href;
+  if (gcalHref && gcalHref !== '#') window.open(gcalHref, '_blank');
+  if (emailHref && emailHref !== '#') window.open(emailHref, '_blank');
+  // Mark as confirmed
+  btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Sent!';
+  btn.style.background = 'rgba(74,222,128,0.2)';
+  btn.style.border = '1px solid rgba(74,222,128,0.5)';
+  btn.style.color = '#4ade80';
+  btn.dataset.confirmed = '1';
+  setTimeout(() => closeModal(), 1200);
+}
+
+function closeModal() {
+  const btn = document.getElementById('confirm-btn');
+  if (btn && !btn.dataset.confirmed) {
+    if (!confirm('Send the confirmation email and calendar invite before closing. Close anyway?')) return;
+  }
+  document.getElementById('modal').classList.remove('open');
+  // Reset button for next time
+  if (btn) {
+    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Confirm &amp; Send';
+    btn.style.background = '';
+    btn.style.border = '';
+    btn.style.color = '';
+    delete btn.dataset.confirmed;
+  }
+}
+
+// ── UTILS ──
+function genId() { return Math.random().toString(36).slice(2,10); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast'); t.textContent = msg;
+  t.className = 'toast ' + type; void t.offsetWidth; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+// ── INIT ──
+tlDate = new Date(); tlDate.setHours(0,0,0,0);
+tlInitSliders(); syncHiddenInputs(); tlRender();
+tlInitSliders(); syncHiddenInputs(); tlRender();
+renderSchedule(); renderGroupSelector(); renderSidebar();
+fetchBookingsFromSheets();
+fetchBookingsFromSheets();
+
+</script>
+
+</body>
+</html>
