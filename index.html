@@ -441,7 +441,14 @@ async function fetchBookings() {
     const res = await fetch(APPS_SCRIPT_URL + '?action=list', { cache: 'no-store' });
     const data = await res.json();
     if (data.status === 'ok') {
-      bookings = data.bookings;
+      bookings = data.bookings.map(b => ({
+        ...b,
+        // Sheets may return dates as "Mon Apr 01 2026 00:00:00 GMT..." — normalize to YYYY-MM-DD
+        date: normalizeDate(b.date),
+        // Ensure arrays are actually arrays (Apps Script JSON.parse should handle this, but be safe)
+        itemIds:    Array.isArray(b.itemIds)    ? b.itemIds    : JSON.parse(b.itemIds    || '[]'),
+        itemLabels: Array.isArray(b.itemLabels) ? b.itemLabels : JSON.parse(b.itemLabels || '[]'),
+      }));
       refreshAllViews();
       setSyncState(false, 'ok');
     } else throw new Error(data.message || 'Unknown error');
@@ -449,6 +456,19 @@ async function fetchBookings() {
     console.warn('Sheets fetch failed:', e);
     setSyncState(false, 'error');
   }
+}
+
+function normalizeDate(val) {
+  if (!val) return '';
+  // Already YYYY-MM-DD
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+  // Try parsing as date and re-formatting
+  const d = new Date(val);
+  if (!isNaN(d)) {
+    const tz = d.getTimezoneOffset() * 60000;
+    return new Date(d - tz).toISOString().split('T')[0];
+  }
+  return String(val);
 }
 
 window.saveBookingToServer = async (booking) => {
@@ -777,8 +797,38 @@ async function submitBooking(){
   finally { btn.textContent='Submit Request'; }
 }
 
-function showSuccessModal(b){
-  document.getElementById('modal-text').innerHTML=`Your reservation for <b>${escHtml(b.group)}</b> is confirmed.<br><br>📅 ${new Date(b.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}<br>⏰ ${formatTimeStr(b.startTime)} - ${formatTimeStr(b.endTime)}<br>📧 ${escHtml(b.email)}<div class="hint">✅ A Google Calendar invite has been sent automatically to ${escHtml(b.email)} and studiooperations@berklee.edu.</div>`;
+function buildGCalUrl(b) {
+  // startTime/endTime are like "10:00", date is "2026-04-01"
+  const [sy, sm, sd] = b.date.split('-');
+  const [sh, smin] = b.startTime.split(':');
+  // Handle overnight: if endTime hours >= 24, roll to next day
+  const endMins = timeToMins(b.endTime);
+  const endDate = endMins >= 1440
+    ? (() => { const d = new Date(b.date+'T00:00:00'); d.setDate(d.getDate()+1); return toISODate(d); })()
+    : b.date;
+  const [ey, em, ed] = endDate.split('-');
+  const [eh, emin] = b.endTime.split(':').map((v,i) => i===0 ? String(parseInt(v)%24).padStart(2,'0') : v);
+  const startDt = `${sy}${sm}${sd}T${sh}${smin}00`;
+  const endDt   = `${ey}${em}${ed}T${eh}${emin}00`;
+  const title   = encodeURIComponent(`IRPM Checkout — ${b.itemLabels.join(' + ')} — ${b.name}`);
+  const details = encodeURIComponent(`IRPM Equipment Checkout\n\nItems: ${b.itemLabels.join(', ')}\nName: ${b.name}\nStudent ID: ${b.sid}\n\nReturn by scheduled end time.\nQuestions? studiooperations@berklee.edu`);
+  const guests  = encodeURIComponent(`${b.email},studiooperations@berklee.edu`);
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startDt}/${endDt}&details=${details}&add=${guests}`;
+}
+
+function showSuccessModal(b) {
+  const gcalUrl = buildGCalUrl(b);
+  document.getElementById('modal-text').innerHTML = `
+    Your reservation for <b>${escHtml(b.group)}</b> is confirmed.<br><br>
+    📅 ${new Date(b.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}<br>
+    ⏰ ${formatTimeStr(b.startTime)} – ${formatTimeStr(b.endTime)}<br>
+    📧 ${escHtml(b.email)}
+    <div class="hint" style="margin-top:14px;">
+      <a href="${gcalUrl}" target="_blank" style="display:block; background:var(--blue); color:#fff; text-align:center; padding:10px; border-radius:7px; text-decoration:none; font-weight:600; font-size:13px; margin-bottom:8px;">
+        📆 Add to Google Calendar
+      </a>
+      Opens a pre-filled calendar event and invites studiooperations@berklee.edu automatically.
+    </div>`;
   document.getElementById('modal').classList.add('open');
 }
 function closeModal(){ document.getElementById('modal').classList.remove('open'); }
