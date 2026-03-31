@@ -58,6 +58,14 @@ function onSignedIn() {
   document.getElementById('sign-in-wall').style.display = 'none';
   document.getElementById('checkout-content').style.display = 'block';
   if (isStaff) document.getElementById('staff-panel').style.display = 'block';
+  
+  // Auto-fill user details if empty
+  if(!document.getElementById('f-name').value) {
+    document.getElementById('f-name').value = currentUser.user_metadata?.full_name || currentUser.displayName || '';
+  }
+  document.getElementById('f-email').value = currentUser.email;
+  checkValid();
+
   subscribeBookings();
 }
 
@@ -192,20 +200,6 @@ window.deleteBookingFromServer = async (bookingId) => {
   if (error) {
     console.error("Error deleting:", error);
     if (typeof showToast === 'function') showToast('Error deleting reservation.', 'error');
-  }
-};
-
-window.saveStaffNoteToServer = async (bookingId, note) => {
-  if (!isStaff) return;
-  const { error } = await supabase.from('bookings').update({ 
-    staff_note: note,
-    staff_note_by: currentUser.email,
-    staff_note_at: new Date().toISOString()
-  }).match({ id: bookingId });
-  
-  if (error) {
-    console.error("Error saving note:", error);
-    if (typeof showToast === 'function') showToast('Error saving note.', 'error');
   }
 };
 
@@ -368,7 +362,7 @@ window.exportToCSV = async () => {
   .status-pill.free { background:var(--green-lt); color:var(--green); }
   .status-pill.busy { background:var(--red-lt);   color:var(--red);   }
 
-  /* ── ITEM TOGGLES (For optional add-ons) ── */
+  /* ── ITEM TOGGLES ── */
   .toggle-list { display:flex; flex-direction:column; gap:8px; }
   .item-toggle { display:flex; align-items:center; gap:12px; border:1px solid var(--border); border-radius:9px; padding:12px 14px; cursor:pointer; transition:all 0.15s; background:var(--surface); }
   .item-toggle:hover:not(.unavailable) { border-color:var(--blue); }
@@ -405,10 +399,10 @@ window.exportToCSV = async () => {
   .legend-item { display:flex; align-items:center; gap:4px; }
   .legend-box { width:10px; height:10px; border-radius:2px; }
 
-  /* ── RANGE SLIDER ── */
-  .slider-wrap { margin-top:24px; padding:0 10px; }
+  /* ── RANGE SLIDER (Fixed Bottom Padding) ── */
+  .slider-wrap { margin-top:24px; padding:0 10px 40px 10px; }
   .noui-custom .noUi-target { background:var(--border); border:none; box-shadow:none; height:6px; border-radius:3px; }
-  .noui-custom .noUi-connect { background:var(--blue); }
+  .noui-custom .noUi-connect { background:var(--blue); cursor: grabbing; } /* Added cursor for drag hint */
   .noui-custom .noUi-handle { width:20px; height:20px; border-radius:50%; background:#fff; border:2px solid var(--blue); box-shadow:0 1px 3px rgba(0,0,0,0.1); cursor:grab; right:-10px; top:-7px; }
   .noui-custom .noUi-handle:active { cursor:grabbing; transform:scale(1.1); }
   .noui-custom .noUi-handle::before, .noui-custom .noUi-handle::after { display:none; }
@@ -535,7 +529,7 @@ window.exportToCSV = async () => {
             <div class="step-title">Select Date & Time</div>
             <div class="step-sub" id="tl-selected-text">NOT SET</div>
           </div>
-          <div class="step-body" style="opacity:0.4; pointer-events:none;" id="step2-body">
+          <div class="step-body" id="step2-body">
             <div class="date-nav">
               <button class="icon-btn" onclick="tlChangeDate(-1)">‹</button>
               <div class="date-label" id="tl-date-label">...</div>
@@ -574,7 +568,7 @@ window.exportToCSV = async () => {
             <div class="step-num" id="s3-num">3</div>
             <div class="step-title">Your Details</div>
           </div>
-          <div class="step-body" style="opacity:0.4; pointer-events:none;" id="step3-body">
+          <div class="step-body" id="step3-body">
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
               <div class="form-group">
                 <label class="form-label">Name</label>
@@ -648,7 +642,6 @@ window.exportToCSV = async () => {
 </div>
 
 <script>
-// ── NEW DATA DEFINITIONS WITH OPTIONAL ADD-ONS ─────────────────────────────
 const BUNDLES = [
   { 
     id: 'b1', 
@@ -676,7 +669,7 @@ const ITEMS = {
 let bookings = [];
 let weekOffset = 0;
 let selBundleId = null;
-let selOptItems = []; // Tracks optional checkboxes
+let selOptItems = []; 
 
 // ── UI HELPERS ────────────────────────────────────────────────────────────
 function switchView(v) {
@@ -736,7 +729,6 @@ function renderSchedule() {
     const pdiv = document.createElement('div'); pdiv.className='pair-divider';
     pdiv.textContent = b.name; bdy.appendChild(pdiv);
 
-    // Render required items first, then optional
     const allItems = [...b.items, ...(b.optional || [])];
 
     allItems.forEach(itemId => {
@@ -794,21 +786,17 @@ function renderBundlePicker() {
     const card = document.createElement('div');
     card.className = 'bundle-card' + (isSel ? ' selected' : '');
     
-    // Custom click handler to prevent toggle clicks from resetting the bundle
     card.onclick = (e) => {
       if(e.target.closest('.item-toggle')) return; 
       if(!isSel) {
         selBundleId = b.id;
-        selOptItems = []; // Reset optional items when switching bundles
+        selOptItems = []; 
         renderBundlePicker();
         tlRender();
         checkValid();
-        document.getElementById('step2-body').style.opacity = 1;
-        document.getElementById('step2-body').style.pointerEvents = 'auto';
       }
     };
 
-    // Build the optional checkboxes if this bundle is currently selected
     let optHtml = '';
     if (isSel && b.optional && b.optional.length > 0) {
       optHtml = '<div class="toggle-list" style="margin-top:16px; border-top:1px solid var(--border); padding-top:12px;">';
@@ -836,7 +824,6 @@ function renderBundlePicker() {
     wrap.appendChild(card);
   });
   
-  // Update the summary in the sidebar
   const bObj = BUNDLES.find(x => x.id === selBundleId);
   if (bObj) {
     let names = [bObj.name];
@@ -848,7 +835,6 @@ function renderBundlePicker() {
   document.getElementById('s1-num').className = 'step-num' + (bObj ? ' done' : '');
 }
 
-// Global function to handle clicking an optional add-on
 window.toggleOpt = (optId) => {
   if (selOptItems.includes(optId)) {
     selOptItems = selOptItems.filter(id => id !== optId);
@@ -856,7 +842,7 @@ window.toggleOpt = (optId) => {
     selOptItems.push(optId);
   }
   renderBundlePicker();
-  tlRender(); // Update the timeline to show the new item
+  tlRender(); 
   checkValid();
 };
 
@@ -880,8 +866,6 @@ function tlRender() {
   const wrap = document.getElementById('tl-tracks'); wrap.innerHTML='';
   
   let conflict = false;
-
-  // Combine required items and actively selected optional items
   const activeItems = [...b.items, ...selOptItems];
 
   activeItems.forEach(iid => {
@@ -932,9 +916,12 @@ function tlRender() {
 function tlInitSliders() {
   const s = document.getElementById('tl-slider');
   noUiSlider.create(s, {
-    start: [START_OF_DAY, START_OF_DAY+120], connect: true,
-    step: 30, range: { 'min': START_OF_DAY, 'max': END_OF_DAY },
+    start: [START_OF_DAY, START_OF_DAY+120], 
+    connect: true,
+    step: 30, 
+    range: { 'min': START_OF_DAY, 'max': END_OF_DAY },
     margin: 30,
+    behavior: 'drag', /* <-- Enables dragging the center connecting bar */
     pips: { mode:'values', values:[10*60, 12*60, 14*60, 16*60, 18*60, 20*60, 22*60], density:4, format:{to:v=>formatTimeStr(minsToTime(v))} }
   });
   s.noUiSlider.on('update', vals => {
@@ -957,17 +944,6 @@ function checkValid() {
 }
 
 ['f-name','f-phone'].forEach(id => document.getElementById(id).addEventListener('input', checkValid));
-
-function syncHiddenInputs() {
-  setInterval(() => {
-    if(currentUser && document.getElementById('f-email').value !== currentUser.email) {
-      document.getElementById('f-email').value = currentUser.email;
-      if(!document.getElementById('f-name').value) document.getElementById('f-name').value = currentUser.user_metadata?.full_name || currentUser.displayName || '';
-      document.getElementById('step3-body').style.opacity = 1; document.getElementById('step3-body').style.pointerEvents = 'auto';
-      checkValid();
-    }
-  }, 1000);
-}
 
 function updateMyBookings() {
   if(!currentUser) return;
@@ -1015,7 +991,7 @@ async function submitBooking() {
     await window.saveBookingToServer(booking);
     showSuccessModal(booking);
     selBundleId = null; 
-    selOptItems = []; // Reset optional items for the next booking
+    selOptItems = []; 
     renderBundlePicker(); tlRender(); checkValid();
   } catch(e) {
     showToast('Failed to submit request.', 'error');
@@ -1048,7 +1024,7 @@ Object.defineProperty(window,'_isStaff',{get:()=>typeof isStaff!=='undefined'?is
 
 tlDate=new Date(); tlDate.setHours(0,0,0,0);
 renderBundlePicker();
-tlInitSliders(); syncHiddenInputs(); tlRender();
+tlInitSliders(); tlRender();
 renderSchedule();
 
 document.getElementById('f-name').addEventListener('focus',()=>{
