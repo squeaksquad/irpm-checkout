@@ -10,7 +10,6 @@
 
 <script>
 // ── SUPABASE CONFIG ───────────────────────────────────────────────────────
-// Replace these with your Supabase project values
 const supabaseUrl = 'https://hmjzpacjccwzydnxnxux.supabase.co';
 const supabaseKey = 'sb_publishable_FlixCiuFKsNO76weXkLxVA_jiNnb-1-';
 const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
@@ -29,11 +28,10 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     }
     currentUser = session.user;
     
-    // Check staff status by triggering the Edge Function to read the Google Sheet
     try {
       const { data, error } = await supabase.functions.invoke('check-admin');
       if (data?.isAdmin) {
-        await supabase.auth.refreshSession(); // Refresh token to get the admin claim
+        await supabase.auth.refreshSession();
         isStaff = true;
       } else {
         isStaff = false;
@@ -99,10 +97,8 @@ function subscribeBookings() {
   
   if (typeof setSyncState === 'function') setSyncState(true);
   
-  // Fetch initial data immediately
   fetchBookings();
 
-  // Listen for realtime changes
   window.bookingsChannel = supabase
     .channel('public:bookings')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, payload => {
@@ -131,7 +127,6 @@ async function fetchBookings() {
   }
   
   if (data) {
-    // Map SQL snake_case back to frontend camelCase expectations
     bookings = data.map(d => ({
       id: d.id,
       group: d.group_name,
@@ -180,7 +175,6 @@ window.saveBookingToServer = async (booking) => {
 };
 
 window.deleteBookingFromServer = async (bookingId) => {
-  // If not staff, ensure they own it before trying to delete
   if (!isStaff) {
     const { data: b, error: fetchErr } = await supabase
       .from('bookings')
@@ -219,7 +213,6 @@ window.exportToCSV = async () => {
   const btn = document.getElementById('export-btn');
   btn.disabled = true; btn.textContent = 'Exporting…';
   try {
-    // Generates CSV locally from the fetched Supabase data
     const header = ['ID','Items','Date','Start','End','Name','Email','Phone','StudentID','StaffNote','Created'];
     const rows = bookings.map(b => [
       b.id, (b.itemLabels||[]).join(' + '), b.date, b.startTime, b.endTime,
@@ -375,7 +368,7 @@ window.exportToCSV = async () => {
   .status-pill.free { background:var(--green-lt); color:var(--green); }
   .status-pill.busy { background:var(--red-lt);   color:var(--red);   }
 
-  /* ── ITEM TOGGLES ── */
+  /* ── ITEM TOGGLES (For optional add-ons) ── */
   .toggle-list { display:flex; flex-direction:column; gap:8px; }
   .item-toggle { display:flex; align-items:center; gap:12px; border:1px solid var(--border); border-radius:9px; padding:12px 14px; cursor:pointer; transition:all 0.15s; background:var(--surface); }
   .item-toggle:hover:not(.unavailable) { border-color:var(--blue); }
@@ -461,7 +454,6 @@ window.exportToCSV = async () => {
   .modal-body { font-size:14px; color:var(--text2); line-height:1.6; margin-bottom:24px; }
   .modal-body .hint { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface2); padding:8px; border-radius:6px; margin-top:12px; }
 
-  /* Layout util */
   .mt-4 { margin-top:16px; }
 </style>
 
@@ -476,7 +468,8 @@ window.exportToCSV = async () => {
     <div class="sign-in-icon">🎹</div>
     <div class="sign-in-title">IRPM Equipment Checkout</div>
     <div class="sign-in-sub">Sign in with your Berklee Google account to reserve equipment and practice spaces.</div>
-    <div id="auth-btn-wrap"></div> </div>
+    <div id="auth-btn-wrap"></div>
+  </div>
 </div>
 
 <header>
@@ -655,28 +648,35 @@ window.exportToCSV = async () => {
 </div>
 
 <script>
-// ── DATA DEFINITIONS ──────────────────────────────────────────────────────
+// ── NEW DATA DEFINITIONS WITH OPTIONAL ADD-ONS ─────────────────────────────
 const BUNDLES = [
-  { id:'b1', name:'Mobile Rig 1', desc:'Apollo Twin X + MacBook Pro + Cables', items:['m1_apollo','m1_mac'] },
-  { id:'b2', name:'Mobile Rig 2', desc:'Apollo Twin X + MacBook Pro + Cables', items:['m2_apollo','m2_mac'] },
-  { id:'b3', name:'Field Recorder', desc:'Zoom F6 + NTG3 Mic + Boom Pole', items:['zoom_f6','ntg3'] },
-  { id:'b4', name:'Synth Station', desc:'Moog Sub37 + Prophet Rev2', items:['moog','prophet'] }
+  { 
+    id: 'b1', 
+    name: 'IRPM Bundle 1', 
+    desc: 'Primary recording rig', 
+    items: ['irpm_bundle_1'], 
+    optional: ['stand_bag_1'] 
+  },
+  { 
+    id: 'b2', 
+    name: 'IRPM Bundle 2', 
+    desc: 'Primary recording rig', 
+    items: ['irpm_bundle_2'], 
+    optional: ['stand_bag_2'] 
+  }
 ];
 
 const ITEMS = {
-  'm1_apollo': { label:'Apollo Twin (Rig 1)' },
-  'm1_mac':    { label:'MacBook Pro (Rig 1)' },
-  'm2_apollo': { label:'Apollo Twin (Rig 2)' },
-  'm2_mac':    { label:'MacBook Pro (Rig 2)' },
-  'zoom_f6':   { label:'Zoom F6 Recorder' },
-  'ntg3':      { label:'Rode NTG3 Shotgun' },
-  'moog':      { label:'Moog Sub37' },
-  'prophet':   { label:'Prophet Rev2' }
+  'irpm_bundle_1': { label: 'IRPM Bundle 1' },
+  'stand_bag_1':   { label: 'Stand Bag 1' },
+  'irpm_bundle_2': { label: 'IRPM Bundle 2' },
+  'stand_bag_2':   { label: 'Stand Bag 2' }
 };
 
 let bookings = [];
 let weekOffset = 0;
 let selBundleId = null;
+let selOptItems = []; // Tracks optional checkboxes
 
 // ── UI HELPERS ────────────────────────────────────────────────────────────
 function switchView(v) {
@@ -704,7 +704,7 @@ function refreshAllViews() { renderSchedule(); tlRender(); updateMyBookings(); }
 function getStartOfWeek(d) {
   const copy = new Date(d);
   const day = copy.getDay();
-  const diff = copy.getDate() - day + (day === 0 ? -6 : 1); // Monday start
+  const diff = copy.getDate() - day + (day === 0 ? -6 : 1);
   copy.setDate(diff); copy.setHours(0,0,0,0); return copy;
 }
 function addDays(d, days) { const c=new Date(d); c.setDate(c.getDate()+days); return c; }
@@ -736,7 +736,10 @@ function renderSchedule() {
     const pdiv = document.createElement('div'); pdiv.className='pair-divider';
     pdiv.textContent = b.name; bdy.appendChild(pdiv);
 
-    b.items.forEach(itemId => {
+    // Render required items first, then optional
+    const allItems = [...b.items, ...(b.optional || [])];
+
+    allItems.forEach(itemId => {
       const row = document.createElement('div'); row.className='item-row';
       row.innerHTML = `<div class="item-label">
         <div class="item-name">${ITEMS[itemId].label}</div>
@@ -747,7 +750,6 @@ function renderSchedule() {
         const cell = document.createElement('div');
         cell.className = 'day-cell' + (dateStr===todayISO ? ' today':'');
         
-        // Find bookings for this item on this day
         const dayBks = bookings.filter(bk => bk.date === dateStr && bk.itemIds.includes(itemId));
         dayBks.forEach(bk => {
           const blk = document.createElement('div'); blk.className='booking-block';
@@ -779,47 +781,87 @@ function formatTimeStr(t24) {
 
 // ── CHECKOUT ENGINE ───────────────────────────────────────────────────────
 let tlDate = new Date();
-let tlStartMins = 10*60; // 10am
-let tlEndMins   = 12*60; // 12pm
+let tlStartMins = 10*60;
+let tlEndMins   = 12*60;
 const START_OF_DAY = 10*60;
 const END_OF_DAY   = 22*60;
 
 function renderBundlePicker() {
   const wrap = document.getElementById('bundle-list'); wrap.innerHTML='';
+  
   BUNDLES.forEach(b => {
+    const isSel = (selBundleId === b.id);
     const card = document.createElement('div');
-    card.className = 'bundle-card' + (selBundleId===b.id?' selected':'');
-    card.onclick = () => { selBundleId=b.id; renderBundlePicker(); tlRender(); checkValid(); document.getElementById('step2-body').style.opacity=1; document.getElementById('step2-body').style.pointerEvents='auto'; };
+    card.className = 'bundle-card' + (isSel ? ' selected' : '');
+    
+    // Custom click handler to prevent toggle clicks from resetting the bundle
+    card.onclick = (e) => {
+      if(e.target.closest('.item-toggle')) return; 
+      if(!isSel) {
+        selBundleId = b.id;
+        selOptItems = []; // Reset optional items when switching bundles
+        renderBundlePicker();
+        tlRender();
+        checkValid();
+        document.getElementById('step2-body').style.opacity = 1;
+        document.getElementById('step2-body').style.pointerEvents = 'auto';
+      }
+    };
+
+    // Build the optional checkboxes if this bundle is currently selected
+    let optHtml = '';
+    if (isSel && b.optional && b.optional.length > 0) {
+      optHtml = '<div class="toggle-list" style="margin-top:16px; border-top:1px solid var(--border); padding-top:12px;">';
+      b.optional.forEach(optId => {
+        const isActive = selOptItems.includes(optId);
+        optHtml += `
+          <div class="item-toggle ${isActive ? 'active' : ''}" onclick="toggleOpt('${optId}')">
+            <div class="toggle-check">${isActive ? '✓' : ''}</div>
+            <div class="toggle-name">${ITEMS[optId].label}</div>
+            <div class="toggle-badge opt">OPTIONAL</div>
+          </div>
+        `;
+      });
+      optHtml += '</div>';
+    }
+
     card.innerHTML = `
       <div class="bundle-name">${b.name}</div>
       <div class="bundle-desc">${b.desc}</div>
-      <div class="bundle-status">
-        ${b.items.map(iid => `<span class="status-pill free">${ITEMS[iid].label.split(' ')[0]}</span>`).join('')}
+      <div class="bundle-status" style="margin-bottom:${isSel ? '0' : '10px'}">
+        <span class="status-pill free">REQUIRED</span>
       </div>
+      ${optHtml}
     `;
     wrap.appendChild(card);
   });
   
-  const b = BUNDLES.find(x=>x.id===selBundleId);
-  document.getElementById('sum-bundle').textContent = b ? b.name : '-';
-  document.getElementById('s1-num').className = 'step-num' + (b?' done':'');
+  // Update the summary in the sidebar
+  const bObj = BUNDLES.find(x => x.id === selBundleId);
+  if (bObj) {
+    let names = [bObj.name];
+    selOptItems.forEach(id => names.push(ITEMS[id].label));
+    document.getElementById('sum-bundle').textContent = names.join(' + ');
+  } else {
+    document.getElementById('sum-bundle').textContent = '-';
+  }
+  document.getElementById('s1-num').className = 'step-num' + (bObj ? ' done' : '');
 }
+
+// Global function to handle clicking an optional add-on
+window.toggleOpt = (optId) => {
+  if (selOptItems.includes(optId)) {
+    selOptItems = selOptItems.filter(id => id !== optId);
+  } else {
+    selOptItems.push(optId);
+  }
+  renderBundlePicker();
+  tlRender(); // Update the timeline to show the new item
+  checkValid();
+};
 
 function tlChangeDate(dir) {
   tlDate.setDate(tlDate.getDate()+dir); tlRender();
-}
-
-function checkAvailability(dateStr, startM, endM, items) {
-  for(const bk of bookings) {
-    if(bk.date !== dateStr) continue;
-    const bStart = timeToMins(bk.startTime);
-    const bEnd   = timeToMins(bk.endTime);
-    // Overlap check
-    if(Math.max(startM, bStart) < Math.min(endM, bEnd)) {
-      if(bk.itemIds.some(i => items.includes(i))) return false;
-    }
-  }
-  return true;
 }
 
 function timeToMins(t) { const [h,m]=t.split(':'); return parseInt(h)*60+parseInt(m); }
@@ -839,11 +881,13 @@ function tlRender() {
   
   let conflict = false;
 
-  b.items.forEach(iid => {
+  // Combine required items and actively selected optional items
+  const activeItems = [...b.items, ...selOptItems];
+
+  activeItems.forEach(iid => {
     const row = document.createElement('div'); row.className='tl-row';
     const track = document.createElement('div'); track.className='tl-track';
     
-    // Draw booked blocks
     const itemBks = bookings.filter(bk => bk.date===dateStr && bk.itemIds.includes(iid));
     itemBks.forEach(bk => {
       const sM = timeToMins(bk.startTime); const eM = timeToMins(bk.endTime);
@@ -853,7 +897,6 @@ function tlRender() {
       track.innerHTML += `<div class="tl-booked" style="left:${left}%; width:${wid}%;"><div class="tl-booked-label">${escHtml(bk.name.split(' ')[0])}</div></div>`;
     });
     
-    // Check local selection conflict
     let trkConf = false;
     itemBks.forEach(bk => {
       const sM = timeToMins(bk.startTime); const eM = timeToMins(bk.endTime);
@@ -861,7 +904,6 @@ function tlRender() {
     });
     if(trkConf) conflict=true;
 
-    // Draw selection block
     const sLeft = ((tlStartMins-START_OF_DAY)/(END_OF_DAY-START_OF_DAY))*100;
     const sWid  = ((tlEndMins-tlStartMins)/(END_OF_DAY-START_OF_DAY))*100;
     track.innerHTML += `<div class="tl-selection ${trkConf?'conflict':'ok'}" style="left:${sLeft}%; width:${sWid}%;"></div>`;
@@ -883,7 +925,7 @@ function tlRender() {
     document.getElementById('sum-time').textContent = `${formatTimeStr(minsToTime(tlStartMins))} - ${formatTimeStr(minsToTime(tlEndMins))}`;
     document.getElementById('sum-time').style.color = 'var(--text)';
     document.getElementById('sum-date').textContent = tlDate.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-    checkValid(); // checks form too
+    checkValid(); 
   }
 }
 
@@ -892,7 +934,7 @@ function tlInitSliders() {
   noUiSlider.create(s, {
     start: [START_OF_DAY, START_OF_DAY+120], connect: true,
     step: 30, range: { 'min': START_OF_DAY, 'max': END_OF_DAY },
-    margin: 30, // min 30m
+    margin: 30,
     pips: { mode:'values', values:[10*60, 12*60, 14*60, 16*60, 18*60, 20*60, 22*60], density:4, format:{to:v=>formatTimeStr(minsToTime(v))} }
   });
   s.noUiSlider.on('update', vals => {
@@ -920,7 +962,7 @@ function syncHiddenInputs() {
   setInterval(() => {
     if(currentUser && document.getElementById('f-email').value !== currentUser.email) {
       document.getElementById('f-email').value = currentUser.email;
-      if(!document.getElementById('f-name').value) document.getElementById('f-name').value = currentUser.displayName || '';
+      if(!document.getElementById('f-name').value) document.getElementById('f-name').value = currentUser.user_metadata?.full_name || currentUser.displayName || '';
       document.getElementById('step3-body').style.opacity = 1; document.getElementById('step3-body').style.pointerEvents = 'auto';
       checkValid();
     }
@@ -953,12 +995,13 @@ async function submitBooking() {
   btn.disabled = true; btn.textContent = 'Submitting...';
   
   const bObj = BUNDLES.find(x=>x.id===selBundleId);
+  const activeItems = [...bObj.items, ...selOptItems];
   
   const booking = {
-    id: 'local_'+Math.random(), // replaced by DB
+    id: 'local_'+Math.random(),
     group: bObj.name,
-    itemIds: bObj.items,
-    itemLabels: bObj.items.map(i=>ITEMS[i].label),
+    itemIds: activeItems,
+    itemLabels: activeItems.map(i=>ITEMS[i].label),
     date: toISODate(tlDate),
     startTime: minsToTime(tlStartMins),
     endTime: minsToTime(tlEndMins),
@@ -971,7 +1014,9 @@ async function submitBooking() {
   try {
     await window.saveBookingToServer(booking);
     showSuccessModal(booking);
-    selBundleId = null; renderBundlePicker(); tlRender(); checkValid();
+    selBundleId = null; 
+    selOptItems = []; // Reset optional items for the next booking
+    renderBundlePicker(); tlRender(); checkValid();
   } catch(e) {
     showToast('Failed to submit request.', 'error');
   } finally {
@@ -999,14 +1044,13 @@ function showToast(msg,type='success') {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────
-// Expose isStaff for renderSidebar/renderSchedule
 Object.defineProperty(window,'_isStaff',{get:()=>typeof isStaff!=='undefined'?isStaff:false,configurable:true});
 
 tlDate=new Date(); tlDate.setHours(0,0,0,0);
 renderBundlePicker();
 tlInitSliders(); syncHiddenInputs(); tlRender();
 renderSchedule();
-// Pre-fill name/email from Google account when signed in
+
 document.getElementById('f-name').addEventListener('focus',()=>{
   if(!document.getElementById('f-name').value && currentUser) {
     document.getElementById('f-name').value  = currentUser.user_metadata?.full_name || currentUser.displayName || '';
