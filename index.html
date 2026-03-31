@@ -36,20 +36,17 @@
   * { box-sizing:border-box; margin:0; padding:0; }
   body { font-family:'IBM Plex Sans',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased; }
 
-  /* ── AUTH OVERLAY ── */
-  .auth-overlay {
-    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(244,245,247,0.95); backdrop-filter: blur(8px);
-    z-index: 99999; display: flex; align-items: center; justify-content: center;
+  /* ── SIGN IN WALL (Hard locked display:flex and max z-index) ── */
+  #sign-in-wall {
+    display:flex; position:fixed; inset:0; z-index:99999;
+    background:rgba(244,245,247,0.95); backdrop-filter:blur(8px);
+    flex-direction:column; align-items:center; justify-content:center; gap:16px;
+    text-align:center;
   }
-  .auth-box {
-    background: var(--surface); padding: 40px 48px; border-radius: 16px;
-    border: 1px solid var(--border); box-shadow: var(--shadow-lg);
-    text-align: center; max-width: 400px; width: 90%;
-  }
-  .auth-box h2 { font-size: 22px; font-weight: 700; margin-bottom: 8px; color: var(--text); letter-spacing:-0.3px; }
-  .auth-box p { font-size: 14px; color: var(--text3); line-height: 1.6; margin-bottom: 24px; }
-  .auth-overlay.hidden { display: none !important; }
+  .sign-in-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:40px 48px; box-shadow:var(--shadow-lg); max-width:400px; width: 90%; }
+  .sign-in-icon  { font-size:40px; margin-bottom:14px; }
+  .sign-in-title { font-size:22px; font-weight:700; letter-spacing:-0.3px; margin-bottom:8px; }
+  .sign-in-sub   { font-size:14px; color:var(--text3); line-height:1.6; margin-bottom:24px; }
 
   /* ── HEADER ── */
   header { background:var(--surface); border-bottom:1px solid var(--border); padding:0 28px; height:58px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:50; }
@@ -231,18 +228,21 @@
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
-
 </head>
+
 <body>
 
-<div id="auth-overlay" class="auth-overlay">
-  <div class="auth-box">
-    <h2>Welcome to IRPM</h2>
-    <p>Please sign in with your Berklee email to continue.</p>
-    <button id="btn-login" class="btn-primary" style="width:100%; justify-content:center; padding:12px; font-size:15px;" onclick="window.doSignIn()">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px; vertical-align:-3px;"><path d="M22 12c0-.8-.1-1.5-.2-2H12v4h5.6c-.2 1.2-.9 2.2-2 2.9v2.4h3.3c1.9-1.8 3.1-4.4 3.1-7.3z"/><path d="M12 22c2.8 0 5.2-.9 7-2.5l-3.3-2.4c-.9.6-2.1 1-3.6 1-2.8 0-5.2-1.9-6-4.5H2.7v2.5C4.5 19.7 7.9 22 12 22z"/><path d="M6 13.6c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V7.1H2.7C2.2 8.3 2 9.6 2 11s.2 2.7.7 3.9l3.3-1.3z"/><path d="M12 6c1.5 0 2.9.5 4 1.5l3-3C17.2 2.6 14.8 1.5 12 1.5 7.9 1.5 4.5 3.8 2.7 7.1l3.3 2.5c.8-2.6 3.2-4.5 6-4.5z"/></svg>
-      Sign in with Google
-    </button>
+<div id="sign-in-wall">
+  <div class="sign-in-card">
+    <div class="sign-in-icon">🎹</div>
+    <div class="sign-in-title">IRPM Equipment Checkout</div>
+    <div class="sign-in-sub">Sign in with your Berklee Google account to reserve equipment and practice spaces.</div>
+    <div id="auth-btn-wrap">
+      <button id="btn-login" class="btn-primary" style="width:100%; justify-content:center; padding:12px; font-size:15px;" onclick="window.doSignIn()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px; vertical-align:-3px;"><path d="M22 12c0-.8-.1-1.5-.2-2H12v4h5.6c-.2 1.2-.9 2.2-2 2.9v2.4h3.3c1.9-1.8 3.1-4.4 3.1-7.3z"/><path d="M12 22c2.8 0 5.2-.9 7-2.5l-3.3-2.4c-.9.6-2.1 1-3.6 1-2.8 0-5.2-1.9-6-4.5H2.7v2.5C4.5 19.7 7.9 22 12 22z"/><path d="M6 13.6c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V7.1H2.7C2.2 8.3 2 9.6 2 11s.2 2.7.7 3.9l3.3-1.3z"/><path d="M12 6c1.5 0 2.9.5 4 1.5l3-3C17.2 2.6 14.8 1.5 12 1.5 7.9 1.5 4.5 3.8 2.7 7.1l3.3 2.5c.8-2.6 3.2-4.5 6-4.5z"/></svg>
+        Sign in with Google
+      </button>
+    </div>
   </div>
 </div>
 
@@ -461,10 +461,9 @@ function onSignedIn() {
     <button class="btn-ghost" onclick="window.doSignOut()">Sign out</button>
   `;
   
-  // Hide overlay, reveal main app
-  document.getElementById('auth-overlay').classList.add('hidden');
+  // Hide wall, reveal app
+  document.getElementById('sign-in-wall').style.display = 'none';
   document.getElementById('app-main').style.display = 'block';
-  
   if (isStaff) document.getElementById('staff-panel').style.display = 'block';
   
   if(!document.getElementById('f-name').value) {
@@ -481,9 +480,9 @@ function onSignedIn() {
 function onSignedOut() {
   document.getElementById('auth-bar').innerHTML = ''; 
   
-  // Hide main app, reveal overlay
+  // Ensure app is hidden, lock wall
   document.getElementById('app-main').style.display = 'none';
-  document.getElementById('auth-overlay').classList.remove('hidden');
+  document.getElementById('sign-in-wall').style.display = 'flex';
   document.getElementById('staff-panel').style.display = 'none';
   
   if (window.bookingsChannel) { 
@@ -494,9 +493,9 @@ function onSignedOut() {
   if (typeof refreshAllViews === 'function') refreshAllViews();
 }
 
+// ── NEW BULLETPROOF SIGN IN FUNCTION ──
 window.doSignIn = async () => {
   try {
-    // Give visual feedback that the click worked
     const btn = document.getElementById('btn-login');
     if (btn) btn.innerHTML = 'Connecting...';
     
@@ -517,6 +516,10 @@ window.doSignIn = async () => {
     console.error("Catch error:", err);
     alert("Unexpected error: " + err.message);
   }
+};
+
+window.doSignOut = async () => {
+  await supabase.auth.signOut();
 };
 
 // ── SUPABASE SUBSCRIPTION & FETCHING ──────────────────────────────────────
@@ -963,14 +966,14 @@ function tlInitSliders() {
   noUiSlider.create(s, {
     start: [START_OF_DAY, START_OF_DAY + 120], 
     connect: true,
-    step: 15, // Adjusted to 15-minute increments
+    step: 15, 
     range: { 'min': START_OF_DAY, 'max': END_OF_DAY },
-    margin: 15, // Minimum 15 minute duration
-    limit: 1425, // MAXIMUM DURATION: 23 hours and 45 minutes
-    behavior: 'drag', // Natively supports dragging without snapping on tap
+    margin: 15, 
+    limit: 1425, // 23h 45m limit
+    behavior: 'drag', 
     pips: { 
       mode:'values', 
-      values:[10*60, 22*60, 34*60, 46*60, 58*60], // Pips every 12 hours
+      values:[10*60, 22*60, 34*60, 46*60, 58*60], 
       density: 2, 
       format:{to:v=>formatTimeStr(minsToTime(v))} 
     }
