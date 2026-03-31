@@ -495,13 +495,28 @@ function onSignedOut() {
 }
 
 window.doSignIn = async () => {
-  await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: { queryParams: { hd: 'berklee.edu' } }
-  });
-};
-window.doSignOut = async () => {
-  await supabase.auth.signOut();
+  try {
+    // Give visual feedback that the click worked
+    const btn = document.getElementById('btn-login');
+    if (btn) btn.innerHTML = 'Connecting...';
+    
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { 
+        queryParams: { hd: 'berklee.edu' },
+        redirectTo: window.location.origin
+      }
+    });
+    
+    if (error) {
+      console.error("Auth error:", error);
+      alert("Login Error: " + error.message);
+      if (btn) btn.innerHTML = 'Sign in with Google';
+    }
+  } catch (err) {
+    console.error("Catch error:", err);
+    alert("Unexpected error: " + err.message);
+  }
 };
 
 // ── SUPABASE SUBSCRIPTION & FETCHING ──────────────────────────────────────
