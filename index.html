@@ -417,26 +417,26 @@
 // ── SUPABASE CONFIG ───────────────────────────────────────────────────────
 const supabaseUrl = 'https://hmjzpacjccwzydnxnxux.supabase.co';
 const supabaseKey = 'sb_publishable_FlixCiuFKsNO76weXkLxVA_jiNnb-1-';
-const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+const sb = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 // ── AUTH STATE ────────────────────────────────────────────────────────────
 let currentUser = null;
 let isStaff = false;
 
-supabase.auth.onAuthStateChange(async (event, session) => {
+sb.auth.onAuthStateChange(async (event, session) => {
   if (session?.user) {
     const email = session.user.email || '';
     if (!email.endsWith('@berklee.edu')) {
       showToast('Only @berklee.edu accounts are allowed.', 'error');
-      await supabase.auth.signOut();
+      await sb.auth.signOut();
       return;
     }
     currentUser = session.user;
     
     try {
-      const { data, error } = await supabase.functions.invoke('check-admin');
+      const { data, error } = await sb.functions.invoke('check-admin');
       if (data?.isAdmin) {
-        await supabase.auth.refreshSession();
+        await sb.auth.refreshSession();
         isStaff = true;
       } else {
         isStaff = false;
@@ -486,7 +486,7 @@ function onSignedOut() {
   document.getElementById('staff-panel').style.display = 'none';
   
   if (window.bookingsChannel) {
-    supabase.removeChannel(window.bookingsChannel);
+    sb.removeChannel(window.bookingsChannel);
     window.bookingsChannel = null;
   }
   bookings = [];
@@ -499,7 +499,7 @@ window.doSignIn = async () => {
     const btn = document.getElementById('btn-login');
     if (btn) btn.innerHTML = 'Connecting...';
     
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
       options: {
         queryParams: { hd: 'berklee.edu' },
@@ -520,18 +520,18 @@ window.doSignIn = async () => {
 };
 
 window.doSignOut = async () => {
-  await supabase.auth.signOut();
+  await sb.auth.signOut();
 };
 
 // ── SUPABASE SUBSCRIPTION & FETCHING ──────────────────────────────────────
 function subscribeBookings() {
   if (window.bookingsChannel) {
-    supabase.removeChannel(window.bookingsChannel);
+    sb.removeChannel(window.bookingsChannel);
   }
   if (typeof setSyncState === 'function') setSyncState(true);
   fetchBookings();
 
-  window.bookingsChannel = supabase
+  window.bookingsChannel = sb
     .channel('public:bookings')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, payload => {
       fetchBookings();
@@ -546,7 +546,7 @@ function subscribeBookings() {
 }
 
 async function fetchBookings() {
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('bookings')
     .select('*')
     .order('date', { ascending: true })
@@ -598,7 +598,7 @@ window.saveBookingToServer = async (booking) => {
     created_by: currentUser.email
   };
 
-  const { error } = await supabase.from('bookings').insert([dbData]);
+  const { error } = await sb.from('bookings').insert([dbData]);
   if (error) {
     console.error("Error saving booking:", error);
     if (typeof showToast === 'function') showToast('Error saving reservation.', 'error');
@@ -607,7 +607,7 @@ window.saveBookingToServer = async (booking) => {
 
 window.deleteBookingFromServer = async (bookingId) => {
   if (!isStaff) {
-    const { data: b, error: fetchErr } = await supabase
+    const { data: b, error: fetchErr } = await sb
       .from('bookings')
       .select('created_by')
       .eq('id', bookingId)
@@ -619,7 +619,7 @@ window.deleteBookingFromServer = async (bookingId) => {
     }
   }
   
-  const { error } = await supabase.from('bookings').delete().match({ id: bookingId });
+  const { error } = await sb.from('bookings').delete().match({ id: bookingId });
   if (error) {
     console.error("Error deleting:", error);
     if (typeof showToast === 'function') showToast('Error deleting reservation.', 'error');
