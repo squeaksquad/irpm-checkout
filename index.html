@@ -502,8 +502,8 @@
   <div style="display:flex;align-items:center;gap:16px;">
     <div id="sync-indicator" class="sync-indicator" style="display:none"></div>
     <nav>
-      <button class="nav-btn active" onclick="switchView('availability')">Availability</button>
-      <button class="nav-btn" onclick="switchView('checkout')">New Checkout</button>
+      <button class="nav-btn active" id="nav-availability" onclick="switchView('availability')">Schedule</button>
+      <button class="nav-btn nav-cta" id="nav-checkout" onclick="switchView('checkout')">+ New Checkout</button>
     </nav>
   </div>
 </header>
@@ -513,8 +513,11 @@
   <!-- ── AVAILABILITY VIEW ── -->
   <div class="view active" id="view-availability">
     <div class="section-header">
-      <div class="section-title">Equipment Schedule</div>
-      <div class="section-sub">// REAL-TIME AVAILABILITY — BUNDLE + STAND BAG PAIRS CAN BE CHECKED OUT TOGETHER</div>
+      <div>
+        <div class="section-title">Equipment Schedule</div>
+        <div class="section-sub">// REAL-TIME AVAILABILITY — BUNDLE + STAND BAG PAIRS CAN BE CHECKED OUT TOGETHER</div>
+      </div>
+      <button class="cta-reserve-btn" onclick="switchView('checkout')">+ Reserve Equipment</button>
     </div>
     <div class="week-nav">
       <button class="week-btn" onclick="changeWeek(-1)">&#8249;</button>
@@ -769,9 +772,9 @@ fetchBookingsFromSheets(); tlRender(); }
 // ── VIEWS ──
 function switchView(v) {
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
   document.getElementById('view-' + v).classList.add('active');
-  document.querySelectorAll('.nav-btn')[v === 'availability' ? 0 : 1].classList.add('active');
+  document.getElementById('nav-availability').classList.toggle('active', v === 'availability');
+  document.getElementById('nav-checkout').classList.toggle('active', v === 'checkout');
   if (v === 'availability') renderSchedule();
   if (v === 'checkout') { renderGroupSelector(); renderSidebar(); tlRender(); }
 }
