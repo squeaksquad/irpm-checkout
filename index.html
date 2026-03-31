@@ -387,13 +387,15 @@ const sb = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 let currentUser = null, isStaff = false;
 
+// Staff emails — add Berklee addresses here as needed
+const STAFF_EMAILS = ['bdimaio@berklee.edu', 'studiooperations@berklee.edu'];
+
 sb.auth.onAuthStateChange(async (event, session) => {
   if (session?.user) {
     const email = session.user.email || '';
     if (!email.endsWith('@berklee.edu')) { showToast('Only @berklee.edu accounts are allowed.','error'); await sb.auth.signOut(); return; }
     currentUser = session.user;
-    try { const { data } = await sb.functions.invoke('check-admin'); isStaff = !!(data?.isAdmin); if (isStaff) await sb.auth.refreshSession(); }
-    catch(e) { console.error('Admin check failed',e); isStaff = false; }
+    isStaff = STAFF_EMAILS.includes(email);
     onSignedIn();
   } else { currentUser = null; isStaff = false; onSignedOut(); }
 });
@@ -413,7 +415,6 @@ function onSignedOut() {
   document.getElementById('app-main').style.display = 'none';
   document.getElementById('sign-in-wall').style.display = 'flex';
   document.getElementById('staff-panel').style.display = 'none';
-  if (window.bookingsChannel) { sb.removeChannel(window.bookingsChannel); window.bookingsChannel = null; }
   bookings = []; if (typeof refreshAllViews==='function') refreshAllViews();
 }
 window.doSignIn = async () => {
@@ -425,42 +426,65 @@ window.doSignIn = async () => {
 };
 window.doSignOut = async () => { await sb.auth.signOut(); };
 
+// ── GOOGLE SHEETS BACKEND ──────────────────────────────────────────────────
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwpFPALtw4cMf54SB_rbByT1mT6w618-0pKZuwY_Ug81eo38MDk8T6opD2-xYGqYJnv/exec';
+
 function subscribeBookings() {
-  if (window.bookingsChannel) sb.removeChannel(window.bookingsChannel);
-  setSyncState(true); fetchBookings();
-  window.bookingsChannel = sb.channel('public:bookings')
-    .on('postgres_changes',{event:'*',schema:'public',table:'bookings'},()=>fetchBookings())
-    .subscribe(s=>{ if(s==='SUBSCRIBED') setSyncState(false,'ok'); else if(s==='CLOSED'||s==='CHANNEL_ERROR') setSyncState(false,'error'); });
+  fetchBookings();
+  // Poll every 30s for updates from other users
+  setInterval(fetchBookings, 30000);
 }
+
 async function fetchBookings() {
-  const { data, error } = await sb.from('bookings').select('*').order('date',{ascending:true}).order('start_time',{ascending:true});
-  if (error) { console.error('Fetch error:',error); setSyncState(false,'error'); return; }
-  if (data) {
-    bookings = data.map(d=>({ id:d.id, group:d.group_name, itemIds:d.item_ids, itemLabels:d.item_labels, date:d.date, startTime:d.start_time, endTime:d.end_time, name:d.name, email:d.email, phone:d.phone, sid:d.sid, createdBy:d.created_by, createdAt:d.created_at }));
-    refreshAllViews(); setSyncState(false,'ok');
+  setSyncState(true);
+  try {
+    const res = await fetch(APPS_SCRIPT_URL + '?action=list', { cache: 'no-store' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      bookings = data.bookings;
+      refreshAllViews();
+      setSyncState(false, 'ok');
+    } else throw new Error(data.message || 'Unknown error');
+  } catch(e) {
+    console.warn('Sheets fetch failed:', e);
+    setSyncState(false, 'error');
   }
 }
+
 window.saveBookingToServer = async (booking) => {
-  const { error } = await sb.from('bookings').insert([{ group_name:booking.group, item_ids:booking.itemIds, item_labels:booking.itemLabels, date:booking.date, start_time:booking.startTime, end_time:booking.endTime, name:booking.name, email:booking.email, phone:booking.phone, sid:booking.sid, created_by:currentUser.email }]);
-  if (error) { console.error('Save error:',error); showToast('Error saving reservation.','error'); throw error; }
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({ booking })
+  });
+  const data = await res.json();
+  if (data.status !== 'ok') throw new Error(data.message || 'Save failed');
+  await fetchBookings();
 };
+
 window.deleteBookingFromServer = async (bookingId) => {
   if (!isStaff) {
-    const { data:b, error:fetchErr } = await sb.from('bookings').select('created_by').eq('id',bookingId).single();
-    if (fetchErr||b.created_by!==currentUser.email) { showToast('You can only delete your own reservations.','error'); return; }
+    const bk = bookings.find(b => b.id === bookingId);
+    if (!bk || bk.createdBy !== currentUser.email) {
+      showToast('You can only delete your own reservations.', 'error'); return;
+    }
   }
-  const { error } = await sb.from('bookings').delete().match({id:bookingId});
-  if (error) { console.error('Delete error:',error); showToast('Error deleting reservation.','error'); }
-};
-window.exportToCSV = async () => {
-  const btn=document.getElementById('export-btn'); btn.disabled=true; btn.textContent='Exporting…';
   try {
-    const header=['ID','Items','Date','Start','End','Name','Email','Phone','StudentID','Created'];
-    const rows=bookings.map(b=>[b.id,(b.itemLabels||[]).join(' + '),b.date,b.startTime,b.endTime,b.name,b.email,b.phone||'',b.sid||'',b.createdAt]);
-    const csv=[header,...rows].map(e=>e.map(String).map(v=>v.replaceAll('"','""')).map(v=>`"${v}"`).join(',')).join('\n');
-    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`irpm-bookings-${new Date().toISOString().split('T')[0]}.csv`; a.click();
-  } catch(e) { showToast('Export failed: '+e.message,'error'); }
-  finally { btn.disabled=false; btn.textContent='Export CSV'; }
+    await fetch(`${APPS_SCRIPT_URL}?action=delete&id=${encodeURIComponent(bookingId)}`);
+    await fetchBookings();
+  } catch(e) {
+    console.warn('Delete failed:', e);
+    showToast('Error deleting reservation.', 'error');
+  }
+};
+
+window.exportToCSV = () => {
+  const header = ['ID','Items','Date','Start','End','Name','Email','Phone','StudentID','Created'];
+  const rows = bookings.map(b => [b.id,(b.itemLabels||[]).join(' + '),b.date,b.startTime,b.endTime,b.name,b.email,b.phone||'',b.sid||'',b.createdAt]);
+  const csv = [header,...rows].map(e=>e.map(String).map(v=>v.replaceAll('"','""')).map(v=>`"${v}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+  a.download = `irpm-bookings-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
 };
 
 // ── DATA ───────────────────────────────────────────────────────────────────
@@ -742,7 +766,7 @@ async function submitBooking(){
   const btn=document.getElementById('btn-submit'); btn.disabled=true; btn.textContent='Submitting...';
   const bObj=BUNDLES.find(x=>x.id===selBundleId);
   const activeItems=[...bObj.items,...selOptItems];
-  const booking={ id:'local_'+Math.random(), group:bObj.name, itemIds:activeItems, itemLabels:activeItems.map(i=>ITEMS[i].label), date:toISODate(tlDate), startTime:minsToTime(stepToMin(tlStartStep)), endTime:minsToTime(stepToMin(tlEndStep)), name:document.getElementById('f-name').value.trim(), email:document.getElementById('f-email').value.trim(), phone:document.getElementById('f-phone').value.trim(), sid:document.getElementById('f-sid').value.trim() };
+  const booking={ id:'local_'+Math.random(), group:bObj.name, itemIds:activeItems, itemLabels:activeItems.map(i=>ITEMS[i].label), date:toISODate(tlDate), startTime:minsToTime(stepToMin(tlStartStep)), endTime:minsToTime(stepToMin(tlEndStep)), name:document.getElementById('f-name').value.trim(), email:document.getElementById('f-email').value.trim(), phone:document.getElementById('f-phone').value.trim(), sid:document.getElementById('f-sid').value.trim(), createdBy:currentUser.email };
   try {
     await window.saveBookingToServer(booking);
     showSuccessModal(booking);
