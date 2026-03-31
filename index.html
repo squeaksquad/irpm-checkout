@@ -176,7 +176,7 @@
   /* ── RANGE SLIDER ── */
   .slider-wrap { margin-top:24px; padding:0 10px 40px 10px; }
   .noui-custom .noUi-target { background:var(--border); border:none; box-shadow:none; height:6px; border-radius:3px; }
-  .noui-custom .noUi-connect { background:var(--blue); cursor: grab; } 
+  .noui-custom .noUi-connect { background:var(--blue); cursor: grab; }
   .noui-custom .noUi-connect:active { cursor: grabbing; }
   .noui-custom .noUi-handle { width:20px; height:20px; border-radius:50%; background:#fff; border:2px solid var(--blue); box-shadow:0 1px 3px rgba(0,0,0,0.1); cursor:grab; right:-10px; top:-7px; }
   .noui-custom .noUi-handle:active { cursor:grabbing; transform:scale(1.1); }
@@ -478,16 +478,16 @@ function onSignedIn() {
 }
 
 function onSignedOut() {
-  document.getElementById('auth-bar').innerHTML = ''; 
+  document.getElementById('auth-bar').innerHTML = '';
   
   // Ensure app is hidden, lock wall
   document.getElementById('app-main').style.display = 'none';
   document.getElementById('sign-in-wall').style.display = 'flex';
   document.getElementById('staff-panel').style.display = 'none';
   
-  if (window.bookingsChannel) { 
-    supabase.removeChannel(window.bookingsChannel); 
-    window.bookingsChannel = null; 
+  if (window.bookingsChannel) {
+    supabase.removeChannel(window.bookingsChannel);
+    window.bookingsChannel = null;
   }
   bookings = [];
   if (typeof refreshAllViews === 'function') refreshAllViews();
@@ -498,35 +498,21 @@ window.doSignIn = async () => {
   try {
     const btn = document.getElementById('btn-login');
     if (btn) btn.innerHTML = 'Connecting...';
-    
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { 
+      options: {
         queryParams: { hd: 'berklee.edu' },
-        // Fixed: This now keeps the /irpm-checkout/ part of your URL!
-        redirectTo: window.location.href 
+        redirectTo: window.location.href
       }
     });
-    
     if (error) {
-      console.error("Auth error:", error);
-      alert("Login Error: " + error.message);
+      console.error('Auth error:', error);
+      showToast('Login error: ' + error.message, 'error');
       if (btn) btn.innerHTML = 'Sign in with Google';
     }
   } catch (err) {
-    console.error("Catch error:", err);
-    alert("Unexpected error: " + err.message);
-  }
-};
-    
-    if (error) {
-      console.error("Auth error:", error);
-      alert("Login Error: " + error.message);
-      if (btn) btn.innerHTML = 'Sign in with Google';
-    }
-  } catch (err) {
-    console.error("Catch error:", err);
-    alert("Unexpected error: " + err.message);
+    console.error('Sign-in error:', err);
+    showToast('Unexpected error: ' + err.message, 'error');
   }
 };
 
@@ -657,27 +643,27 @@ window.exportToCSV = async () => {
     const a    = document.createElement('a');
     a.href = url; a.download = `irpm-bookings-${new Date().toISOString().split('T')[0]}.csv`;
     a.click(); URL.revokeObjectURL(url);
-  } catch(e) { 
-    if (typeof showToast === 'function') showToast('Export failed: ' + e.message, 'error'); 
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('Export failed: ' + e.message, 'error');
   }
   finally { btn.disabled = false; btn.textContent = 'Export CSV'; }
 };
 
 // ── DATA DEFINITIONS ──────────────────────────────────────────────────────
 const BUNDLES = [
-  { 
-    id: 'b1', 
-    name: 'IRPM Bundle 1', 
-    desc: 'Primary recording rig', 
-    items: ['irpm_bundle_1'], 
-    optional: ['stand_bag_1'] 
+  {
+    id: 'b1',
+    name: 'IRPM Bundle 1',
+    desc: 'Primary recording rig',
+    items: ['irpm_bundle_1'],
+    optional: ['stand_bag_1']
   },
-  { 
-    id: 'b2', 
-    name: 'IRPM Bundle 2', 
-    desc: 'Primary recording rig', 
-    items: ['irpm_bundle_2'], 
-    optional: ['stand_bag_2'] 
+  {
+    id: 'b2',
+    name: 'IRPM Bundle 2',
+    desc: 'Primary recording rig',
+    items: ['irpm_bundle_2'],
+    optional: ['stand_bag_2']
   }
 ];
 
@@ -691,7 +677,7 @@ const ITEMS = {
 let bookings = [];
 let weekOffset = 0;
 let selBundleId = null;
-let selOptItems = []; 
+let selOptItems = [];
 
 // ── UI HELPERS ────────────────────────────────────────────────────────────
 function switchView(v) {
@@ -773,7 +759,7 @@ function renderSchedule() {
            if (dayDiff < 0) return false;
 
            const eMins = timeToMins(bk.endTime);
-           const maxDay = Math.floor((eMins - 1) / (24 * 60)); 
+           const maxDay = Math.floor((eMins - 1) / (24 * 60));
            if (dayDiff > maxDay) return false;
 
            return true;
@@ -817,7 +803,7 @@ function minsToTime(m) { const h=Math.floor(m/60); const mm=m%60; return `${h.to
 // ── CHECKOUT ENGINE ───────────────────────────────────────────────────────
 let tlDate = new Date();
 
-// THE 48 HOUR WINDOW MATH 
+// THE 48 HOUR WINDOW MATH
 const START_OF_DAY = 10 * 60; // 10:00 AM
 const END_OF_DAY   = START_OF_DAY + (48 * 60); // 48 Hours later (58:00)
 
@@ -833,10 +819,10 @@ function renderBundlePicker() {
     card.className = 'bundle-card' + (isSel ? ' selected' : '');
     
     card.onclick = (e) => {
-      if(e.target.closest('.item-toggle')) return; 
+      if(e.target.closest('.item-toggle')) return;
       if(!isSel) {
         selBundleId = b.id;
-        selOptItems = []; 
+        selOptItems = [];
         renderBundlePicker();
         tlRender();
         checkValid();
@@ -888,7 +874,7 @@ window.toggleOpt = (optId) => {
     selOptItems.push(optId);
   }
   renderBundlePicker();
-  tlRender(); 
+  tlRender();
   checkValid();
 };
 
@@ -969,25 +955,25 @@ function tlRender() {
     document.getElementById('sum-time').textContent = `${formatTimeStr(minsToTime(tlStartMins))} - ${formatTimeStr(minsToTime(tlEndMins))}`;
     document.getElementById('sum-time').style.color = 'var(--text)';
     document.getElementById('sum-date').textContent = tlDate.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-    checkValid(); 
+    checkValid();
   }
 }
 
 function tlInitSliders() {
   const s = document.getElementById('tl-slider');
   noUiSlider.create(s, {
-    start: [START_OF_DAY, START_OF_DAY + 120], 
+    start: [START_OF_DAY, START_OF_DAY + 120],
     connect: true,
-    step: 15, 
+    step: 15,
     range: { 'min': START_OF_DAY, 'max': END_OF_DAY },
-    margin: 15, 
+    margin: 15,
     limit: 1425, // 23h 45m limit
-    behavior: 'drag', 
-    pips: { 
-      mode:'values', 
-      values:[10*60, 22*60, 34*60, 46*60, 58*60], 
-      density: 2, 
-      format:{to:v=>formatTimeStr(minsToTime(v))} 
+    behavior: 'drag',
+    pips: {
+      mode:'values',
+      values:[10*60, 22*60, 34*60, 46*60, 58*60],
+      density: 2,
+      format:{to:v=>formatTimeStr(minsToTime(v))}
     }
   });
   s.noUiSlider.on('update', vals => {
@@ -1045,7 +1031,7 @@ async function submitBooking() {
     itemIds: activeItems,
     itemLabels: activeItems.map(i=>ITEMS[i].label),
     date: toISODate(tlDate),
-    startTime: minsToTime(tlStartMins), 
+    startTime: minsToTime(tlStartMins),
     endTime: minsToTime(tlEndMins),
     name: document.getElementById('f-name').value.trim(),
     email: document.getElementById('f-email').value.trim(),
@@ -1056,8 +1042,8 @@ async function submitBooking() {
   try {
     await window.saveBookingToServer(booking);
     showSuccessModal(booking);
-    selBundleId = null; 
-    selOptItems = []; 
+    selBundleId = null;
+    selOptItems = [];
     renderBundlePicker(); tlRender(); checkValid();
   } catch(e) {
     showToast('Failed to submit request.', 'error');
