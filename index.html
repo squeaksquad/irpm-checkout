@@ -56,25 +56,24 @@ function onSignedIn() {
     <button class="btn-ghost" onclick="window.doSignOut()">Sign out</button>
   `;
   
-  // Hide the wall to reveal the app
+  // HARD LOCK: Reveal the app and hide the wall ONLY when fully authenticated
   document.getElementById('sign-in-wall').style.display = 'none';
+  document.getElementById('app-main').style.display = 'block';
   if (isStaff) document.getElementById('staff-panel').style.display = 'block';
   
-  // Auto-fill user details if empty
   if(!document.getElementById('f-name').value) {
     document.getElementById('f-name').value = currentUser.user_metadata?.full_name || currentUser.displayName || '';
   }
-  document.getElementById('f-email').value = currentUser.email;
+  if(!document.getElementById('f-email').value) {
+    document.getElementById('f-email').value = currentUser.email;
+  }
   checkValid();
 
   subscribeBookings();
 }
 
 function onSignedOut() {
-  // Clear the top right header
   document.getElementById('auth-bar').innerHTML = ''; 
-  
-  // Put the big sign in button in the center of the login card
   document.getElementById('auth-btn-wrap').innerHTML = `
     <button class="btn-primary" style="font-size: 15px; padding: 10px 20px;" onclick="window.doSignIn()">
       <svg width="18" height="18" viewBox="0 0 24 24" style="margin-right:8px; vertical-align:-3px;"><path fill="currentColor" d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 110-12.064c1.498 0 2.866.549 3.921 1.453l2.814-2.814A9.969 9.969 0 0012.545 2C7.021 2 2.543 6.477 2.543 12s4.478 10 10.002 10c8.396 0 10.249-7.85 9.426-11.748l-9.426-.013z"/></svg>
@@ -82,20 +81,28 @@ function onSignedOut() {
     </button>
   `;
   
-  // Lock the app down
+  // HARD LOCK: Ensure the main app is invisible
+  document.getElementById('app-main').style.display = 'none';
   document.getElementById('sign-in-wall').style.display = 'flex';
   document.getElementById('staff-panel').style.display = 'none';
   
-  // Stop database listeners
   if (window.bookingsChannel) { 
     supabase.removeChannel(window.bookingsChannel); 
     window.bookingsChannel = null; 
   }
-  
-  // Clear data
   bookings = [];
   if (typeof refreshAllViews === 'function') refreshAllViews();
 }
+
+window.doSignIn = async () => {
+  await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { queryParams: { hd: 'berklee.edu' } }
+  });
+};
+window.doSignOut = async () => {
+  await supabase.auth.signOut();
+};
 
 // ── SUPABASE SUBSCRIPTION & FETCHING ──────────────────────────────────────
 function subscribeBookings() {
@@ -290,10 +297,10 @@ window.exportToCSV = async () => {
   main { max-width:1100px; margin:0 auto; padding:32px 28px; }
   .view { display:none; } .view.active { display:block; }
 
-  /* ── SIGN IN WALL ── */
+  /* ── SIGN IN WALL (Hard locked display:flex and max z-index) ── */
   #sign-in-wall {
-    display:none; position:fixed; inset:0; z-index:40;
-    background:rgba(244,245,247,0.92); backdrop-filter:blur(8px);
+    display:flex !important; position:fixed; inset:0; z-index:99999;
+    background:rgba(244,245,247,0.95); backdrop-filter:blur(8px);
     flex-direction:column; align-items:center; justify-content:center; gap:16px;
     text-align:center;
   }
@@ -392,17 +399,15 @@ window.exportToCSV = async () => {
   .tl-selection.ok { background:rgba(22,163,74,0.15); border:1px solid rgba(22,163,74,0.4); }
   .tl-selection.conflict { background:rgba(220,38,38,0.12); border:1px solid rgba(220,38,38,0.35); }
   .tl-selection.inactive { background:rgba(0,0,0,0.04); border:1px solid var(--border); }
-  .tl-ticks { display:flex; padding-left:130px; margin-bottom:4px; }
-  .tl-tick { flex:1; position:relative; height:8px; border-left:1px solid var(--border2); }
-  .tl-tick-label { position:absolute; top:10px; left:-12px; font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text4); }
   .tl-legend { display:flex; gap:12px; padding-left:130px; margin-top:16px; font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text3); text-transform:uppercase; letter-spacing:0.5px; }
   .legend-item { display:flex; align-items:center; gap:4px; }
   .legend-box { width:10px; height:10px; border-radius:2px; }
 
-  /* ── RANGE SLIDER (Fixed Bottom Padding) ── */
+  /* ── RANGE SLIDER ── */
   .slider-wrap { margin-top:24px; padding:0 10px 40px 10px; }
   .noui-custom .noUi-target { background:var(--border); border:none; box-shadow:none; height:6px; border-radius:3px; }
-  .noui-custom .noUi-connect { background:var(--blue); cursor: grabbing; } /* Added cursor for drag hint */
+  .noui-custom .noUi-connect { background:var(--blue); cursor: grab; } 
+  .noui-custom .noUi-connect:active { cursor: grabbing; }
   .noui-custom .noUi-handle { width:20px; height:20px; border-radius:50%; background:#fff; border:2px solid var(--blue); box-shadow:0 1px 3px rgba(0,0,0,0.1); cursor:grab; right:-10px; top:-7px; }
   .noui-custom .noUi-handle:active { cursor:grabbing; transform:scale(1.1); }
   .noui-custom .noUi-handle::before, .noui-custom .noUi-handle::after { display:none; }
@@ -466,169 +471,161 @@ window.exportToCSV = async () => {
   </div>
 </div>
 
-<header>
-  <div class="logo">
-    <div class="logo-mark">IR</div>
-    <div>
-      <div class="logo-text">IRPM Equipment</div>
-      <div class="logo-sub">STUDIO OPERATIONS</div>
-    </div>
-  </div>
-  <div style="display:flex; align-items:center;">
-    <nav>
-      <button class="nav-btn active" onclick="switchView('schedule')">Schedule</button>
-      <button class="nav-btn nav-cta" onclick="switchView('checkout')">New Request</button>
-    </nav>
-    <div id="auth-bar"></div>
-  </div>
-</header>
-
-<main>
-  <div id="view-schedule" class="view active">
-    <div class="page-hd">
+<div id="app-main" style="display: none;">
+  <header>
+    <div class="logo">
+      <div class="logo-mark">IR</div>
       <div>
-        <h1 class="page-title">Master Schedule</h1>
-        <div class="page-sub">View all reservations</div>
-      </div>
-      <div id="sync-status" class="sync-pill idle"><div class="sync-dot"></div> Live</div>
-    </div>
-    <div class="week-nav">
-      <button class="icon-btn text" onclick="weekOffset=0; renderSchedule();">TODAY</button>
-      <button class="icon-btn" onclick="weekOffset--; renderSchedule();">‹</button>
-      <div class="week-label" id="week-label">...</div>
-      <button class="icon-btn" onclick="weekOffset++; renderSchedule();">›</button>
-    </div>
-    <div class="schedule-wrap">
-      <div class="schedule-header" id="sched-hd"></div>
-      <div id="sched-body"></div>
-    </div>
-  </div>
-
-  <div id="view-checkout" class="view">
-    <div class="page-hd">
-      <div>
-        <h1 class="page-title">New Request</h1>
-        <div class="page-sub">Reserve equipment bundles</div>
+        <div class="logo-text">IRPM Equipment</div>
+        <div class="logo-sub">STUDIO OPERATIONS</div>
       </div>
     </div>
+    <div style="display:flex; align-items:center;">
+      <nav>
+        <button class="nav-btn active" onclick="switchView('schedule')">Schedule</button>
+        <button class="nav-btn nav-cta" onclick="switchView('checkout')">New Request</button>
+      </nav>
+      <div id="auth-bar"></div>
+    </div>
+  </header>
 
-    <div class="checkout-cols">
-      <div class="co-main">
-        <div class="step-card">
-          <div class="step-hd">
-            <div class="step-num" id="s1-num">1</div>
-            <div class="step-title">Select Bundle</div>
-            <div class="step-sub">CHOOSE ONE</div>
-          </div>
-          <div class="step-body bundle-grid" id="bundle-list"></div>
+  <main>
+    <div id="view-schedule" class="view active">
+      <div class="page-hd">
+        <div>
+          <h1 class="page-title">Master Schedule</h1>
+          <div class="page-sub">View all reservations</div>
         </div>
+        <div id="sync-status" class="sync-pill idle"><div class="sync-dot"></div> Live</div>
+      </div>
+      <div class="week-nav">
+        <button class="icon-btn text" onclick="weekOffset=0; renderSchedule();">TODAY</button>
+        <button class="icon-btn" onclick="weekOffset--; renderSchedule();">‹</button>
+        <div class="week-label" id="week-label">...</div>
+        <button class="icon-btn" onclick="weekOffset++; renderSchedule();">›</button>
+      </div>
+      <div class="schedule-wrap">
+        <div class="schedule-header" id="sched-hd"></div>
+        <div id="sched-body"></div>
+      </div>
+    </div>
 
-        <div class="step-card">
-          <div class="step-hd">
-            <div class="step-num" id="s2-num">2</div>
-            <div class="step-title">Select Date & Time</div>
-            <div class="step-sub" id="tl-selected-text">NOT SET</div>
-          </div>
-          <div class="step-body" id="step2-body">
-            <div class="date-nav">
-              <button class="icon-btn" onclick="tlChangeDate(-1)">‹</button>
-              <div class="date-label" id="tl-date-label">...</div>
-              <button class="icon-btn" onclick="tlChangeDate(1)">›</button>
-              <button class="icon-btn text" onclick="tlDate=new Date(); tlDate.setHours(0,0,0,0); tlRender();">TODAY</button>
-            </div>
-            
-            <div class="tl-time-row">
-              <div class="tl-time-big" id="tl-display-time">10:00 AM - 12:00 PM</div>
-              <div class="tl-duration-badge" id="tl-display-dur">2 hrs</div>
-            </div>
-
-            <div class="tl-tracks" id="tl-tracks"></div>
-            
-            <div class="tl-ticks">
-              <div class="tl-tick"><div class="tl-tick-label">10a</div></div>
-              <div class="tl-tick"><div class="tl-tick-label">12p</div></div>
-              <div class="tl-tick"><div class="tl-tick-label">2p</div></div>
-              <div class="tl-tick"><div class="tl-tick-label">4p</div></div>
-              <div class="tl-tick"><div class="tl-tick-label">6p</div></div>
-              <div class="tl-tick"><div class="tl-tick-label">8p</div></div>
-              <div class="tl-tick"><div class="tl-tick-label">10p</div></div>
-              <div class="tl-tick" style="border:none;"></div>
-            </div>
-            <div class="tl-legend">
-              <div class="legend-item"><div class="legend-box" style="background:var(--red-lt); border:1px solid var(--red);"></div> Unavailable</div>
-              <div class="legend-item"><div class="legend-box" style="background:rgba(22,163,74,0.15); border:1px solid rgba(22,163,74,0.4);"></div> Selected</div>
-            </div>
-
-            <div class="slider-wrap"><div id="tl-slider" class="noui-custom"></div></div>
-          </div>
+    <div id="view-checkout" class="view">
+      <div class="page-hd">
+        <div>
+          <h1 class="page-title">New Request</h1>
+          <div class="page-sub">Reserve equipment bundles</div>
         </div>
-
-        <div class="step-card">
-          <div class="step-hd">
-            <div class="step-num" id="s3-num">3</div>
-            <div class="step-title">Your Details</div>
-          </div>
-          <div class="step-body" id="step3-body">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-              <div class="form-group">
-                <label class="form-label">Name</label>
-                <input type="text" id="f-name" class="form-input" placeholder="First Last">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Berklee Email</label>
-                <input type="email" id="f-email" class="form-input" placeholder="username@berklee.edu" readonly style="background:#f3f4f6; color:#6b7280;">
-              </div>
-            </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-              <div class="form-group">
-                <label class="form-label">Phone</label>
-                <input type="tel" id="f-phone" class="form-input" placeholder="000-000-0000">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Student ID (Optional)</label>
-                <input type="text" id="f-sid" class="form-input" placeholder="0000000">
-              </div>
-            </div>
-          </div>
-        </div>
-
       </div>
 
-      <div class="co-side">
-        <div class="side-card">
-          <div class="side-hd">Request Summary</div>
-          <div class="side-body">
-            <div class="summary-box">
-              <div class="summary-row"><span style="color:var(--text3)">Bundle</span><span id="sum-bundle" class="summary-val">-</span></div>
-              <div class="summary-row"><span style="color:var(--text3)">Date</span><span id="sum-date" class="summary-val">-</span></div>
-              <div class="summary-row"><span style="color:var(--text3)">Time</span><span id="sum-time" class="summary-val">-</span></div>
+      <div class="checkout-cols">
+        <div class="co-main">
+          <div class="step-card">
+            <div class="step-hd">
+              <div class="step-num" id="s1-num">1</div>
+              <div class="step-title">Select Bundle</div>
+              <div class="step-sub">CHOOSE ONE</div>
             </div>
-            <button class="btn-primary" style="width:100%; justify-content:center; padding:12px; font-size:14px;" id="btn-submit" disabled onclick="submitBooking()">Submit Request</button>
-            <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); text-align:center; margin-top:12px; line-height:1.4;">
-              By submitting, you agree to the IRPM equipment policy. A calendar invite will be sent.
+            <div class="step-body bundle-grid" id="bundle-list"></div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-hd">
+              <div class="step-num" id="s2-num">2</div>
+              <div class="step-title">Select Date & Time</div>
+              <div class="step-sub" id="tl-selected-text">NOT SET</div>
+            </div>
+            <div class="step-body" id="step2-body">
+              <div class="date-nav">
+                <button class="icon-btn" onclick="tlChangeDate(-1)">‹</button>
+                <div class="date-label" id="tl-date-label">...</div>
+                <button class="icon-btn" onclick="tlChangeDate(1)">›</button>
+                <button class="icon-btn text" onclick="tlDate=new Date(); tlDate.setHours(0,0,0,0); tlRender();">TODAY</button>
+              </div>
+              
+              <div class="tl-time-row">
+                <div class="tl-time-big" id="tl-display-time">10:00 AM - 12:00 PM</div>
+                <div class="tl-duration-badge" id="tl-display-dur">2 hrs</div>
+              </div>
+
+              <div class="tl-tracks" id="tl-tracks"></div>
+              
+              <div class="tl-legend">
+                <div class="legend-item"><div class="legend-box" style="background:var(--red-lt); border:1px solid var(--red);"></div> Unavailable</div>
+                <div class="legend-item"><div class="legend-box" style="background:rgba(22,163,74,0.15); border:1px solid rgba(22,163,74,0.4);"></div> Selected</div>
+              </div>
+
+              <div class="slider-wrap"><div id="tl-slider" class="noui-custom"></div></div>
             </div>
           </div>
-        </div>
 
-        <div class="side-card" id="my-bookings-card" style="display:none;">
-          <div class="side-hd">My Upcoming</div>
-          <div class="side-body" id="my-bookings-list" style="padding-top:6px;"></div>
-        </div>
-
-        <div class="side-card" id="staff-panel" style="display:none; border-color:var(--purple); background:var(--purple-lt);">
-          <div class="side-hd" style="background:var(--purple); color:#fff; border:none; display:flex; align-items:center; gap:8px;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            Staff Tools
+          <div class="step-card">
+            <div class="step-hd">
+              <div class="step-num" id="s3-num">3</div>
+              <div class="step-title">Your Details</div>
+            </div>
+            <div class="step-body" id="step3-body">
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                <div class="form-group">
+                  <label class="form-label">Name</label>
+                  <input type="text" id="f-name" class="form-input" placeholder="First Last">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Berklee Email</label>
+                  <input type="email" id="f-email" class="form-input" placeholder="username@berklee.edu">
+                </div>
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                <div class="form-group">
+                  <label class="form-label">Phone</label>
+                  <input type="tel" id="f-phone" class="form-input" placeholder="000-000-0000">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Student ID (Optional)</label>
+                  <input type="text" id="f-sid" class="form-input" placeholder="0000000">
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="side-body">
-            <button class="btn-ghost" style="width:100%; background:#fff; margin-bottom:8px;" id="export-btn" onclick="window.exportToCSV()">Export CSV</button>
-            <div style="font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--purple); opacity:0.8; text-align:center;">You can delete any booking from the schedule view.</div>
+
+        </div>
+
+        <div class="co-side">
+          <div class="side-card">
+            <div class="side-hd">Request Summary</div>
+            <div class="side-body">
+              <div class="summary-box">
+                <div class="summary-row"><span style="color:var(--text3)">Bundle</span><span id="sum-bundle" class="summary-val">-</span></div>
+                <div class="summary-row"><span style="color:var(--text3)">Date</span><span id="sum-date" class="summary-val">-</span></div>
+                <div class="summary-row"><span style="color:var(--text3)">Time</span><span id="sum-time" class="summary-val">-</span></div>
+              </div>
+              <button class="btn-primary" style="width:100%; justify-content:center; padding:12px; font-size:14px;" id="btn-submit" disabled onclick="submitBooking()">Submit Request</button>
+              <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); text-align:center; margin-top:12px; line-height:1.4;">
+                By submitting, you agree to the IRPM equipment policy. A calendar invite will be sent.
+              </div>
+            </div>
+          </div>
+
+          <div class="side-card" id="my-bookings-card" style="display:none;">
+            <div class="side-hd">My Upcoming</div>
+            <div class="side-body" id="my-bookings-list" style="padding-top:6px;"></div>
+          </div>
+
+          <div class="side-card" id="staff-panel" style="display:none; border-color:var(--purple); background:var(--purple-lt);">
+            <div class="side-hd" style="background:var(--purple); color:#fff; border:none; display:flex; align-items:center; gap:8px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Staff Tools
+            </div>
+            <div class="side-body">
+              <button class="btn-ghost" style="width:100%; background:#fff; margin-bottom:8px;" id="export-btn" onclick="window.exportToCSV()">Export CSV</button>
+              <div style="font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--purple); opacity:0.8; text-align:center;">You can delete any booking from the schedule view.</div>
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
-</main>
+  </main>
+</div>
 
 <div id="toast"></div>
 
@@ -693,7 +690,7 @@ function setSyncState(isSyncing, status) {
 
 function refreshAllViews() { renderSchedule(); tlRender(); updateMyBookings(); }
 
-// ── SCHEDULE VIEW ─────────────────────────────────────────────────────────
+// ── SCHEDULE VIEW (Updated for multi-day spans) ───────────────────────────
 function getStartOfWeek(d) {
   const copy = new Date(d);
   const day = copy.getDay();
@@ -742,10 +739,25 @@ function renderSchedule() {
         const cell = document.createElement('div');
         cell.className = 'day-cell' + (dateStr===todayISO ? ' today':'');
         
-        const dayBks = bookings.filter(bk => bk.date === dateStr && bk.itemIds.includes(itemId));
+        // Find any bookings that cross through this specific day
+        const dayBks = bookings.filter(bk => {
+           if (!bk.itemIds.includes(itemId)) return false;
+           const bDate = new Date(bk.date + 'T00:00:00');
+           const targetDate = new Date(dateStr + 'T00:00:00');
+           const dayDiff = Math.round((targetDate - bDate) / 86400000);
+
+           if (dayDiff < 0) return false;
+
+           const eMins = timeToMins(bk.endTime);
+           const maxDay = Math.floor((eMins - 1) / (24 * 60)); 
+           if (dayDiff > maxDay) return false;
+
+           return true;
+        });
+
         dayBks.forEach(bk => {
           const blk = document.createElement('div'); blk.className='booking-block';
-          blk.innerHTML = `<div class="bk-name">${escHtml(bk.name.split(' ')[0])}</div><div class="bk-time">${formatTimeStr(bk.startTime)}</div>`;
+          blk.innerHTML = `<div class="bk-name">${escHtml(bk.name.split(' ')[0])}</div><div class="bk-time">${formatTimeStr(bk.startTime)} - ${formatTimeStr(bk.endTime)}</div>`;
           
           if (window._isStaff) {
             blk.innerHTML += `<div class="bk-staff-info">
@@ -765,18 +777,29 @@ function renderSchedule() {
   });
 }
 
+// Automatically handles times past 24:00 and attaches a (+1d) visual indicator
 function formatTimeStr(t24) {
   let [h,m] = t24.split(':'); h=parseInt(h,10);
-  const ampm = h>=12 ? 'PM' : 'AM';
-  h = h%12 || 12; return `${h}:${m} ${ampm}`;
+  const days = Math.floor(h / 24);
+  const hour24 = h % 24;
+  const ampm = hour24 >= 12 ? 'PM' : 'AM';
+  const hour12 = hour24 % 12 || 12;
+  const dayStr = days > 0 ? ` (+${days}d)` : '';
+  return `${hour12}:${m} ${ampm}${dayStr}`;
 }
+
+function timeToMins(t) { const [h,m]=t.split(':'); return parseInt(h)*60+parseInt(m); }
+function minsToTime(m) { const h=Math.floor(m/60); const mm=m%60; return `${h.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`; }
 
 // ── CHECKOUT ENGINE ───────────────────────────────────────────────────────
 let tlDate = new Date();
-let tlStartMins = 10*60;
-let tlEndMins   = 12*60;
-const START_OF_DAY = 10*60;
-const END_OF_DAY   = 22*60;
+
+// THE 48 HOUR WINDOW MATH 
+const START_OF_DAY = 10 * 60; // 10:00 AM
+const END_OF_DAY   = START_OF_DAY + (48 * 60); // 48 Hours later (58:00)
+
+let tlStartMins = START_OF_DAY;
+let tlEndMins   = START_OF_DAY + 120; // Default 2 hours
 
 function renderBundlePicker() {
   const wrap = document.getElementById('bundle-list'); wrap.innerHTML='';
@@ -850,9 +873,6 @@ function tlChangeDate(dir) {
   tlDate.setDate(tlDate.getDate()+dir); tlRender();
 }
 
-function timeToMins(t) { const [h,m]=t.split(':'); return parseInt(h)*60+parseInt(m); }
-function minsToTime(m) { const h=Math.floor(m/60); const mm=m%60; return `${h.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`; }
-
 function tlRender() {
   document.getElementById('tl-date-label').textContent = tlDate.toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'});
   
@@ -863,6 +883,7 @@ function tlRender() {
   
   const b = BUNDLES.find(x=>x.id===selBundleId);
   const dateStr = toISODate(tlDate);
+  const baseDate = new Date(dateStr + 'T00:00:00');
   const wrap = document.getElementById('tl-tracks'); wrap.innerHTML='';
   
   let conflict = false;
@@ -872,21 +893,38 @@ function tlRender() {
     const row = document.createElement('div'); row.className='tl-row';
     const track = document.createElement('div'); track.className='tl-track';
     
-    const itemBks = bookings.filter(bk => bk.date===dateStr && bk.itemIds.includes(iid));
-    itemBks.forEach(bk => {
-      const sM = timeToMins(bk.startTime); const eM = timeToMins(bk.endTime);
-      if(eM<=START_OF_DAY || sM>=END_OF_DAY) return;
-      const left = ((sM-START_OF_DAY)/(END_OF_DAY-START_OF_DAY))*100;
-      const wid  = ((eM-sM)/(END_OF_DAY-START_OF_DAY))*100;
+    // Find overlapping items within the 48 hour span
+    const overlappingBks = bookings.filter(bk => {
+      if(!bk.itemIds.includes(iid)) return false;
+      const bDate = new Date(bk.date + 'T00:00:00');
+      const dayOffset = Math.round((bDate - baseDate) / 86400000);
+      const sM = dayOffset * 24 * 60 + timeToMins(bk.startTime);
+      const eM = dayOffset * 24 * 60 + timeToMins(bk.endTime);
+      return Math.max(START_OF_DAY, sM) < Math.min(END_OF_DAY, eM);
+    });
+
+    overlappingBks.forEach(bk => {
+      const bDate = new Date(bk.date + 'T00:00:00');
+      const dayOffset = Math.round((bDate - baseDate) / 86400000);
+      const sM = dayOffset * 24 * 60 + timeToMins(bk.startTime);
+      const eM = dayOffset * 24 * 60 + timeToMins(bk.endTime);
+
+      const left = Math.max(0, ((sM - START_OF_DAY) / (END_OF_DAY - START_OF_DAY)) * 100);
+      const right = Math.min(100, ((eM - START_OF_DAY) / (END_OF_DAY - START_OF_DAY)) * 100);
+      const wid = right - left;
+
       track.innerHTML += `<div class="tl-booked" style="left:${left}%; width:${wid}%;"><div class="tl-booked-label">${escHtml(bk.name.split(' ')[0])}</div></div>`;
     });
     
     let trkConf = false;
-    itemBks.forEach(bk => {
-      const sM = timeToMins(bk.startTime); const eM = timeToMins(bk.endTime);
-      if(Math.max(tlStartMins, sM) < Math.min(tlEndMins, eM)) trkConf = true;
+    overlappingBks.forEach(bk => {
+      const bDate = new Date(bk.date + 'T00:00:00');
+      const dayOffset = Math.round((bDate - baseDate) / 86400000);
+      const sM = dayOffset * 24 * 60 + timeToMins(bk.startTime);
+      const eM = dayOffset * 24 * 60 + timeToMins(bk.endTime);
+      if (Math.max(tlStartMins, sM) < Math.min(tlEndMins, eM)) trkConf = true;
     });
-    if(trkConf) conflict=true;
+    if(trkConf) conflict = true;
 
     const sLeft = ((tlStartMins-START_OF_DAY)/(END_OF_DAY-START_OF_DAY))*100;
     const sWid  = ((tlEndMins-tlStartMins)/(END_OF_DAY-START_OF_DAY))*100;
@@ -916,13 +954,18 @@ function tlRender() {
 function tlInitSliders() {
   const s = document.getElementById('tl-slider');
   noUiSlider.create(s, {
-    start: [START_OF_DAY, START_OF_DAY+120], 
+    start: [START_OF_DAY, START_OF_DAY + 120], 
     connect: true,
     step: 30, 
     range: { 'min': START_OF_DAY, 'max': END_OF_DAY },
     margin: 30,
-    behavior: 'drag', /* <-- Enables dragging the center connecting bar */
-    pips: { mode:'values', values:[10*60, 12*60, 14*60, 16*60, 18*60, 20*60, 22*60], density:4, format:{to:v=>formatTimeStr(minsToTime(v))} }
+    behavior: 'drag', /* Enables dragging the bar, explicitly disables snap-to-tap */
+    pips: { 
+      mode:'values', 
+      values:[10*60, 22*60, 34*60, 46*60, 58*60], // Pips every 12 hours
+      density: 2, 
+      format:{to:v=>formatTimeStr(minsToTime(v))} 
+    }
   });
   s.noUiSlider.on('update', vals => {
     tlStartMins = parseInt(vals[0]); tlEndMins = parseInt(vals[1]);
@@ -943,7 +986,7 @@ function checkValid() {
   document.getElementById('btn-submit').disabled = !(ok1&&ok2&&ok3);
 }
 
-['f-name','f-phone'].forEach(id => document.getElementById(id).addEventListener('input', checkValid));
+['f-name','f-phone', 'f-email'].forEach(id => document.getElementById(id).addEventListener('input', checkValid));
 
 function updateMyBookings() {
   if(!currentUser) return;
@@ -979,10 +1022,10 @@ async function submitBooking() {
     itemIds: activeItems,
     itemLabels: activeItems.map(i=>ITEMS[i].label),
     date: toISODate(tlDate),
-    startTime: minsToTime(tlStartMins),
+    startTime: minsToTime(tlStartMins), // Can natively save string '34:00' to Supabase
     endTime: minsToTime(tlEndMins),
     name: document.getElementById('f-name').value.trim(),
-    email: currentUser.email,
+    email: document.getElementById('f-email').value.trim(),
     phone: document.getElementById('f-phone').value.trim(),
     sid: document.getElementById('f-sid').value.trim() || null
   };
