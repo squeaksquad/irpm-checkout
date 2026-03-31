@@ -503,9 +503,21 @@ window.doSignIn = async () => {
       provider: 'google',
       options: { 
         queryParams: { hd: 'berklee.edu' },
-        redirectTo: window.location.origin
+        // Fixed: This now keeps the /irpm-checkout/ part of your URL!
+        redirectTo: window.location.href 
       }
     });
+    
+    if (error) {
+      console.error("Auth error:", error);
+      alert("Login Error: " + error.message);
+      if (btn) btn.innerHTML = 'Sign in with Google';
+    }
+  } catch (err) {
+    console.error("Catch error:", err);
+    alert("Unexpected error: " + err.message);
+  }
+};
     
     if (error) {
       console.error("Auth error:", error);
