@@ -279,19 +279,9 @@
           </div>
 
           <!-- STEP 2 -->
-          <div class="step-card locked" id="step2-card">
-            <div class="step-hd">
-              <div class="step-num" id="s2-num">2</div>
-              <div class="step-title">Select Items</div>
-              <div class="step-sub" id="s2-sub">CHOOSE BUNDLE FIRST</div>
-            </div>
-            <div class="step-body"><div class="toggle-list" id="toggle-list"></div></div>
-          </div>
-
-          <!-- STEP 3 -->
           <div class="step-card locked" id="step3-card">
             <div class="step-hd">
-              <div class="step-num" id="s3-num">3</div>
+              <div class="step-num" id="s3-num">2</div>
               <div class="step-title">Select Date &amp; Time</div>
               <div class="tl-time-big" id="tl-time-display" style="margin-left:auto;font-size:15px;">—</div>
             </div>
@@ -325,7 +315,7 @@
           <!-- STEP 4 -->
           <div class="step-card locked" id="step4-card">
             <div class="step-hd">
-              <div class="step-num" id="s4-num">4</div>
+              <div class="step-num" id="s4-num">3</div>
               <div class="step-title">Your Details</div>
             </div>
             <div class="step-body">
@@ -589,8 +579,7 @@ window.toggleOpt=(optId)=>{
 };
 
 function unlockSteps(){
-  ['step2-card','step3-card','step4-card'].forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.remove('locked'); });
-  const sub=document.getElementById('s2-sub'); if(sub) sub.textContent='';
+  ['step3-card','step4-card'].forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.remove('locked'); });
 }
 
 // ── TIMELINE RENDER ────────────────────────────────────────────────────────
@@ -758,8 +747,7 @@ async function submitBooking(){
     await window.saveBookingToServer(booking);
     showSuccessModal(booking);
     selBundleId=null; selOptItems=[];
-    ['step2-card','step3-card','step4-card'].forEach(id=>document.getElementById(id).classList.add('locked'));
-    document.getElementById('s2-sub').textContent='CHOOSE BUNDLE FIRST';
+    ['step3-card','step4-card'].forEach(id=>document.getElementById(id).classList.add('locked'));
     renderBundlePicker(); tlRender(); checkValid();
   } catch(e){ showToast('Failed to submit request.','error'); }
   finally { btn.textContent='Submit Request'; }
