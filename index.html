@@ -259,24 +259,38 @@
 
   @media (max-width:860px) {
     .checkout-cols { grid-template-columns:1fr; }
-    header { padding:0 16px; }
+    header { padding:0 12px; }
     main { padding:20px 16px; }
     .tl-chip { font-size:12px; padding:3px 7px; }
     .tl-chip-input { font-size:12px; width:78px; }
+    nav { gap:4px; margin-right:6px; }
+    .nav-btn { padding:6px 10px; font-size:12px; }
+    .auth-email { display:none; } /* hide email, keep sign-out */
   }
   @media (max-width:640px) {
     .bundle-grid { grid-template-columns:1fr; }
+    /* Slider: remove left padding so tracks go full width */
     .tl-ticks, .tl-sublabel, .slider-wrap { padding-left:0; }
     .range-track { left:0; }
-    .tl-label { width:auto; max-width:90px; }
-    .tl-row { flex-direction:row; gap:6px; }
-    .tl-legend { padding-left:0; flex-wrap:wrap; }
-    .step-hd { flex-wrap:wrap; gap:8px; }
-    .tl-time-chips { margin-left:0; width:100%; justify-content:flex-end; }
-    .cal-body-scroll { max-height:480px; }
-    .schedule-wrap { font-size:11px; }
+    /* Track rows: keep horizontal, shrink label */
+    .tl-row { flex-direction:row; gap:6px; align-items:center; }
+    .tl-label { width:80px; min-width:60px; flex-shrink:0; font-size:11px; }
+    .tl-legend { padding-left:0; flex-wrap:wrap; gap:8px; }
+    /* Step header: stack number+title on left, chips below */
+    .step-hd { flex-wrap:wrap; row-gap:8px; }
+    .tl-time-chips { margin-left:0; width:100%; justify-content:flex-start; padding-left:36px; } /* indent to align under title */
+    /* Calendar */
+    .cal-body-scroll { max-height:460px; }
+    .cal-hd-cell { font-size:9px; padding:6px 2px; }
+    .cal-hd-day { font-size:13px; }
+    /* General */
     main { padding:12px 10px; }
-    .page-hd { margin-bottom:14px; }
+    .page-hd { margin-bottom:12px; }
+    .page-title { font-size:18px; }
+    /* Hide sublabel on very small screens — it overflows */
+    .tl-sublabel { font-size:8px; gap:4px; }
+    /* Slider hint wraps okay */
+    .slider-hint { font-size:9px; }
   }
 </style>
 </head>
@@ -1234,25 +1248,31 @@ function tlInitChips() {
         if (mins !== null) {
           const step = minsToStep(mins);
           if (isStart) {
-            tlStartStep = Math.min(step, tlEndStep - 2);
-            // If new start would violate max gap, push end
-            if (tlEndStep - tlStartStep > MAX_GAP) tlEndStep = tlStartStep + MAX_GAP;
+            const duration = tlEndStep - tlStartStep; // preserve window size
+            if (step >= tlEndStep) {
+              // New start is at or past current end — shift both, preserving duration
+              tlStartStep = Math.min(step, TL_STEPS - MIN_GAP);
+              tlEndStep   = Math.min(tlStartStep + duration, TL_STEPS);
+              if (tlEndStep - tlStartStep > MAX_GAP) tlEndStep = tlStartStep + MAX_GAP;
+            } else {
+              tlStartStep = step;
+              if (tlEndStep - tlStartStep > MAX_GAP) tlEndStep = tlStartStep + MAX_GAP;
+            }
           } else {
-            tlEndStep = Math.max(step, tlStartStep + 2);
+            tlEndStep = Math.max(step, tlStartStep + MIN_GAP);
             if (tlEndStep - tlStartStep > MAX_GAP) tlEndStep = tlStartStep + MAX_GAP;
             if (tlEndStep > TL_STEPS) tlEndStep = TL_STEPS;
           }
           // Sync slider DOM
-          const track = document.getElementById('range-track');
           const fillEl = document.getElementById('range-fill');
           const centerEl = document.getElementById('range-center');
           const handleS = document.getElementById('range-handle-start');
           const handleE = document.getElementById('range-handle-end');
           const sl = (tlStartStep/TL_STEPS*100).toFixed(3)+'%', el = (tlEndStep/TL_STEPS*100).toFixed(3)+'%', w = ((tlEndStep-tlStartStep)/TL_STEPS*100).toFixed(3)+'%';
           fillEl.style.left=sl; fillEl.style.width=w; centerEl.style.left=sl; centerEl.style.width=w; handleS.style.left=sl; handleE.style.left=el;
-          tlRender(); checkValid();
         }
         chip.innerHTML = ''; // remove input, tlRender will set textContent
+        tlRender(); checkValid();
         tlRender(); checkValid();
       }
 
