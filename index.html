@@ -1219,10 +1219,7 @@ function showSuccessModal(b) {
     Your reservation for <b>${escHtml(b.group)}</b> is confirmed.<br><br>
     📅 ${new Date(b.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}<br>
     ⏰ ${formatTimeStr(b.startTime)} – ${formatTimeStr(b.endTime)}<br>
-    📧 ${escHtml(b.email)}
-    <div class="hint" style="margin-top:14px;">
-      A calendar invite will be sent to your email from the Equipment Reservations calendar.
-    </div>`;
+    📧 ${escHtml(b.email)}`;
   document.getElementById('modal').classList.add('open');
 }
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
