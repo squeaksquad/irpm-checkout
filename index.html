@@ -811,7 +811,10 @@ function renderSchedule() {
             <span class="cal-pop-val">${escHtml(itemNames)}</span>
           </div>`}
         </div>
-        ${isStaffNow ? `<div class="cal-pop-footer"><button class="btn-danger" style="width:100%" data-cancel="${bk.id}">Cancel Booking</button></div>` : ''}
+        ${isStaffNow ? `<div class="cal-pop-footer" style="display:flex;flex-direction:column;gap:6px;">
+          <button class="btn-ghost" style="width:100%;font-size:12px;" data-invite="${bk.id}">📅 Send Calendar Invite</button>
+          <button class="btn-danger" style="width:100%" data-cancel="${bk.id}">Cancel Booking</button>
+        </div>` : ''}
       `;
       document.body.appendChild(pop);
 
@@ -833,6 +836,29 @@ function renderSchedule() {
           e.stopPropagation();
           pop.classList.remove('open');
           window.deleteBookingFromServer(cancelBtn.dataset.cancel);
+        });
+      }
+
+      // Wire send invite button
+      const inviteBtn = pop.querySelector('[data-invite]');
+      if (inviteBtn) {
+        inviteBtn.addEventListener('click', async e => {
+          e.stopPropagation();
+          inviteBtn.textContent = 'Sending…'; inviteBtn.disabled = true;
+          try {
+            const res = await fetch(`${APPS_SCRIPT_URL}?action=createevent&id=${encodeURIComponent(inviteBtn.dataset.invite)}`);
+            const data = await res.json();
+            if (data.status === 'ok') {
+              inviteBtn.textContent = '✓ Invite Sent';
+              inviteBtn.style.color = 'var(--green)';
+            } else {
+              inviteBtn.textContent = '✗ Failed';
+              inviteBtn.style.color = 'var(--red)';
+              console.error('Invite error:', data.message);
+            }
+          } catch(err) {
+            inviteBtn.textContent = '✗ Error'; inviteBtn.style.color = 'var(--red)';
+          }
         });
       }
 
@@ -1174,22 +1200,18 @@ function buildGCalUrl(b) {
   const endDt   = `${ey}${em}${ed}T${eh}${emin}00`;
   const title   = encodeURIComponent(`IRPM Checkout — ${b.itemLabels.join(' + ')} — ${b.name}`);
   const details = encodeURIComponent(`IRPM Equipment Checkout\n\nItems: ${b.itemLabels.join(', ')}\nName: ${b.name}\nStudent ID: ${b.sid}\n\nReturn by scheduled end time.\nQuestions? studiooperations@berklee.edu`);
-  const guests  = encodeURIComponent(`${b.email},studiooperations@berklee.edu`);
+  const guests  = encodeURIComponent(`${b.email},scheduleviewer@berklee.edu`);
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startDt}/${endDt}&details=${details}&add=${guests}`;
 }
 
 function showSuccessModal(b) {
-  const gcalUrl = buildGCalUrl(b);
   document.getElementById('modal-text').innerHTML = `
     Your reservation for <b>${escHtml(b.group)}</b> is confirmed.<br><br>
     📅 ${new Date(b.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}<br>
     ⏰ ${formatTimeStr(b.startTime)} – ${formatTimeStr(b.endTime)}<br>
     📧 ${escHtml(b.email)}
     <div class="hint" style="margin-top:14px;">
-      <a href="${gcalUrl}" target="_blank" style="display:block; background:var(--blue); color:#fff; text-align:center; padding:10px; border-radius:7px; text-decoration:none; font-weight:600; font-size:13px; margin-bottom:8px;">
-        📆 Add to Google Calendar
-      </a>
-      Opens a pre-filled calendar event and invites studiooperations@berklee.edu automatically.
+      A calendar invite will be sent to your email from the Equipment Reservations calendar.
     </div>`;
   document.getElementById('modal').classList.add('open');
 }
