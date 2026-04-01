@@ -597,7 +597,11 @@ function setSyncState(isSyncing, status) {
   if (isSyncing) { p.className = 'sync-pill syncing'; p.innerHTML = '<div class="sync-dot"></div> Syncing...'; }
   else { p.className = 'sync-pill ' + (status === 'error' ? 'error' : 'idle'); p.innerHTML = `<div class="sync-dot"></div> ${status === 'error' ? 'Offline' : 'Live'}`; }
 }
-function refreshAllViews() { renderSchedule(); renderBundlePicker(); tlRender(); updateMyBookings(); }
+function refreshAllViews() {
+  // Don't re-render the schedule (which destroys DOM + open popovers) if staff is interacting with one
+  if (!document.querySelector('.cal-popover.open')) renderSchedule();
+  renderBundlePicker(); tlRender(); updateMyBookings();
+}
 
 // ── SCHEDULE ───────────────────────────────────────────────────────────────
 function getStartOfWeek(d) { const c = new Date(d), day = c.getDay(), diff = c.getDate() - day + (day === 0 ? -6 : 1); c.setDate(diff); c.setHours(0, 0, 0, 0); return c; }
@@ -812,7 +816,7 @@ function renderSchedule() {
           </div>`}
         </div>
         ${isStaffNow ? `<div class="cal-pop-footer" style="display:flex;flex-direction:column;gap:6px;">
-          <button class="btn-ghost" style="width:100%;font-size:12px;" data-invite="${bk.id}">📅 Send Calendar Invite</button>
+          <button class="btn-ghost" style="width:100%;font-size:12px;" data-invite="${bk.id}">📅 Create Calendar Event</button>
           <button class="btn-danger" style="width:100%" data-cancel="${bk.id}">Cancel Booking</button>
         </div>` : ''}
       `;
