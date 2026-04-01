@@ -572,8 +572,8 @@ let bookings = [], weekOffset = 0, selBundleId = null, selOptItems = [];
 
 // ── TIMELINE STATE ─────────────────────────────────────────────────────────
 let tlDate = new Date(); tlDate.setHours(0, 0, 0);
-const TL_STEPS = 96, TL_MINS = 24 * 60;
-let tlStartStep = 36, tlEndStep = 44; // default 9am–11am
+const TL_STEPS = 192, TL_MINS = 48 * 60; // 48h window: midnight day 1 → midnight day 3
+let tlStartStep = 36, tlEndStep = 44; // default 9am–11am day 1
 
 function stepToMin(s) { return s * 15; }
 function toISODate(d) { const tz = d.getTimezoneOffset() * 60000; return new Date(d - tz).toISOString().split('T')[0]; }
@@ -970,14 +970,29 @@ function tlRender() {
   const ds = tlDateStr();
   document.getElementById('tl-date-label').textContent = tlDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  const tickHours = [0, 3, 6, 9, 12, 15, 18, 21, 24];
+  const tickHours = [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48];
   document.getElementById('tl-ticks').innerHTML = tickHours.map((h, i) => {
     const isLast = i === tickHours.length - 1; if (isLast) return `<div class="tl-tick" style="flex:0.001"></div>`;
-    const lbl = h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`;
+    const hh = h % 24;
+    let lbl;
+    if (h === 0)  lbl = '12a';
+    else if (h === 24) lbl = `<span style="color:var(--blue-dk);font-weight:700;font-size:9px">+1d</span>`;
+    else if (hh === 0) lbl = `<span style="color:var(--blue-dk);font-size:8px">12a</span>`;
+    else if (hh < 12)  lbl = `${hh}a`;
+    else if (hh === 12) lbl = '12p';
+    else lbl = `${hh - 12}p`;
     return `<div class="tl-tick">${lbl}</div>`;
   }).join('');
 
-  document.getElementById('tl-sublabel').innerHTML = `<span>${fmtShort(tlDate)} midnight</span><span style="color:var(--border2)">···············</span><span>11:59 PM</span>`;
+  const nextDate = new Date(tlDate); nextDate.setDate(tlDate.getDate() + 1);
+  document.getElementById('tl-sublabel').innerHTML =
+    `<span>${fmtShort(tlDate)}</span>` +
+    `<span style="color:var(--border2)">·········</span>` +
+    `<span>midnight</span>` +
+    `<span style="color:var(--border2)">·········</span>` +
+    `<span style="color:var(--blue-dk);font-weight:600">${fmtShort(nextDate)}</span>` +
+    `<span style="color:var(--border2)">·········</span>` +
+    `<span style="color:var(--blue-dk)">midnight</span>`;
 
   if (!selBundleId) {
     document.getElementById('tl-tracks').innerHTML = '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center;border:1px dashed var(--border);border-radius:6px;">Select a bundle above to view availability.</div>';
@@ -989,12 +1004,13 @@ function tlRender() {
   const tracksEl = document.getElementById('tl-tracks'); tracksEl.innerHTML = '';
   const selStartMin = stepToMin(tlStartStep), selEndMin = stepToMin(tlEndStep);
 
-  function getBookingsForDay(itemId) { return bookings.filter(bk => bk.itemIds.includes(itemId) && bk.date === ds); }
+  function getBookingsForWindow(itemId) { return bookings.filter(bk => bk.itemIds.includes(itemId) && (bk.date === ds || bk.date === toISODate(nextDate))); }
   function bookingToAbsRange(bk) {
     const sMin = timeToMins(bk.startTime), eMin = timeToMins(bk.endTime);
     const isOvernight = eMin >= 1440 || eMin <= sMin;
-    // overnight: show from start to end of day (1440); the next-day portion isn't shown on this 24h track
-    return [sMin, isOvernight ? 1440 : eMin];
+    const wrappedEnd = eMin >= 1440 ? eMin : (isOvernight ? eMin + 1440 : eMin);
+    if (bk.date === ds) return [sMin, wrappedEnd];
+    const a = sMin + 1440; return [a, isOvernight ? wrappedEnd + 1440 : eMin + 1440];
   }
 
   let anyConflict = false;
@@ -1002,12 +1018,20 @@ function tlRender() {
     const row = document.createElement('div'); row.className = 'tl-row';
     const lbl = document.createElement('div'); lbl.className = 'tl-label'; lbl.textContent = ITEMS[iid].label;
     const track = document.createElement('div'); track.className = 'tl-track';
+
+    // Next-day shading: subtle blue tint over the second 24h of the track
+    const nextShade = document.createElement('div');
+    nextShade.style.cssText = 'position:absolute;top:0;bottom:0;left:50%;right:0;background:rgba(37,99,235,0.04);border-left:1px solid rgba(37,99,235,0.15);pointer-events:none;';
+    track.appendChild(nextShade);
+
     let hasConflict = false;
-    getBookingsForDay(iid).forEach(bk => {
+    getBookingsForWindow(iid).forEach(bk => {
       const range = bookingToAbsRange(bk); if (!range) return;
       const [absStart, absEnd] = range;
+      const renderStart = Math.min(absStart, TL_MINS), renderEnd = Math.min(absEnd, TL_MINS);
+      if (renderEnd <= renderStart) return;
       const seg = document.createElement('div'); seg.className = 'tl-booked';
-      seg.style.left = (absStart / TL_MINS * 100) + '%'; seg.style.width = ((absEnd - absStart) / TL_MINS * 100) + '%';
+      seg.style.left = (renderStart / TL_MINS * 100) + '%'; seg.style.width = ((renderEnd - renderStart) / TL_MINS * 100) + '%';
       const segLbl = document.createElement('div'); segLbl.className = 'tl-booked-label'; segLbl.textContent = bk.name;
       seg.appendChild(segLbl); track.appendChild(seg);
       if (!(absEnd <= selStartMin || absStart >= selEndMin)) hasConflict = true;
@@ -1022,9 +1046,14 @@ function tlRender() {
   const diffMin = selEndMin - selStartMin;
   document.getElementById('tl-duration').textContent = `${Math.floor(diffMin / 60)}h${diffMin % 60 > 0 ? ` ${diffMin % 60}m` : ''}`;
 
-  const crossesMidnight = selEndMin >= 1440;
-  const startLbl = minToTime12(selStartMin);
-  const endLbl = crossesMidnight ? `${fmtShort(new Date(tlDate.getTime() + 86400000))} ${minToTime12(selEndMin)}` : minToTime12(selEndMin);
+  const crossesDay = selStartMin >= 1440;
+  const endCrossesDay = selEndMin >= 1440;
+  const startLbl = crossesDay
+    ? `${fmtShort(nextDate)} ${minToTime12(selStartMin)}`
+    : minToTime12(selStartMin);
+  const endLbl = endCrossesDay
+    ? `${fmtShort(nextDate)} ${minToTime12(selEndMin)}`
+    : minToTime12(selEndMin);
   document.getElementById('tl-time-display').textContent = `${startLbl} – ${endLbl}`;
 
   const noteEl = document.getElementById('tl-conflict-note');
@@ -1040,7 +1069,7 @@ function tlRender() {
 
 // ── DRAG SLIDER ────────────────────────────────────────────────────────────
 function tlInitSliders() {
-  const MIN_GAP = 2, MAX_GAP = 96;
+  const MIN_GAP = 2, MAX_GAP = 192;
   const track = document.getElementById('range-track');
   const fillEl = document.getElementById('range-fill');
   const centerEl = document.getElementById('range-center');
@@ -1114,7 +1143,14 @@ async function submitBooking() {
   const btn = document.getElementById('btn-submit'); btn.disabled = true; btn.textContent = 'Submitting...';
   const bObj = BUNDLES.find(x => x.id === selBundleId);
   const activeItems = [...bObj.items, ...selOptItems];
-  const booking = { id: 'local_' + Math.random(), group: bObj.name, itemIds: activeItems, itemLabels: activeItems.map(i => ITEMS[i].label), date: toISODate(tlDate), startTime: minsToTime(stepToMin(tlStartStep)), endTime: minsToTime(stepToMin(tlEndStep)), name: document.getElementById('f-name').value.trim(), email: document.getElementById('f-email').value.trim(), phone: document.getElementById('f-phone').value.trim(), sid: document.getElementById('f-sid').value.trim(), createdBy: currentUser.email };
+  const startMin = stepToMin(tlStartStep), endMin = stepToMin(tlEndStep);
+  // If the start handle is past midnight (>= 1440), the actual booking date is the next day
+  const startDayOffset = startMin >= 1440 ? 1 : 0;
+  const bookingDate = addDays(tlDate, startDayOffset);
+  // Times stored relative to the booking date's midnight
+  const relStart = startMin - startDayOffset * 1440;
+  const relEnd   = endMin   - startDayOffset * 1440;
+  const booking = { id: 'local_' + Math.random(), group: bObj.name, itemIds: activeItems, itemLabels: activeItems.map(i => ITEMS[i].label), date: toISODate(bookingDate), startTime: minsToTime(relStart), endTime: minsToTime(relEnd), name: document.getElementById('f-name').value.trim(), email: document.getElementById('f-email').value.trim(), phone: document.getElementById('f-phone').value.trim(), sid: document.getElementById('f-sid').value.trim(), createdBy: currentUser.email };
   try {
     await window.saveBookingToServer(booking);
     showSuccessModal(booking);
